@@ -45,7 +45,6 @@ DB %>%
     Lender_Type == 0 & Fintech == 0 ~ 'Shadow Bank',
     Lender_Type == 0 & Fintech == 1 ~ 'Fintech'
   )) %>% 
-  #mutate(Type = as.factor(Type)) %>% 
   group_by(Type) %>% 
   distinct(Loan_Seq_Number, .keep_all = F) %>% 
   summarise(Count = n()) %>% 
@@ -53,17 +52,20 @@ DB %>%
   mutate(Type = reorder(Type, Count)) %>% 
   ggplot(aes(x = Count, y = Type, fill = Type)) +
   geom_col() +
-  labs(x = '', y = 'Number of unique loans') +
+  labs(x = '', y = '', title = 'Number of unique loans by type of financial institutions') +
   theme(legend.position = 'none') +                                   
   scale_x_continuous(labels = scales::comma)
+
+ggsave('Graphs/num_loans_by_bank_types.png')
 
 
 
 
 DB %>% 
-  add_count(Seller_Name) %>% 
-  select(Seller_Name, n, Lender_Type, Fintech) %>% 
+  select(Loan_Seq_Number, Seller_Name, Lender_Type, Fintech) %>% 
   collect() %>% 
+  distinct(Loan_Seq_Number, .keep_all = TRUE) %>% 
+  add_count(Seller_Name) %>% 
   distinct(Seller_Name, .keep_all = TRUE) %>% 
   ungroup() %>% 
   mutate(Seller_Name = reorder(Seller_Name, n),
@@ -74,8 +76,13 @@ DB %>%
          )) %>% 
   ggplot(aes(x = n, y = Seller_Name, fill = Type)) +
   geom_col() +
-  labs(x = '', y = '') +                                   
-  scale_x_continuous(labels = scales::comma)
+  labs(x = '', y = '', title = 'Number of unique loans by Seller') +                                   
+  scale_x_continuous(labels = scales::comma) +
+  theme(legend.position = 'bottom') 
+
+ggsave('Graphs/num_loans_by_seller.png', width = 28, height = 20, units = "cm")
+
+
 
 # Pas de NA
 DB %>% count(FstTime_HB_Flag, sort = TRUE)
