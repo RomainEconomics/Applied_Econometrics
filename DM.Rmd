@@ -60,13 +60,18 @@ library(janitor)
 library(tidyverse)
 library(sf)
 library(usmap)
+library(tsibble)
+library(DBI) 
 ```
 
 
 ```{r}
-DB <- readRDS("Data/DB.rds") 
+con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
+DB = tbl(con, "DB")
 
-DB
+DB %>% 
+  head() %>% 
+  collect()
 ```
 
 
@@ -83,11 +88,12 @@ DB
 DB %>% 
   count(Loan_Seq_Number) %>% 
   summarise(Number_Loans = n(),
-            Max_T = max(n),
-            Min_T = min(n),
-            Mean_T = mean(n),
-            Median_T = median(n),
-            )
+            Max_T = max(n, na.rm = TRUE),
+            Min_T = min(n, na.rm = TRUE),
+            Mean_T = mean(n, na.rm = TRUE),
+            Median_T = median(n, na.rm = TRUE),
+            ) %>% 
+  collect()
 ```
 
 
@@ -102,15 +108,19 @@ DB %>%
          )) %>% 
   group_by(Type) %>% 
   count(Loan_Seq_Number) %>% 
-  summarise(tibble(Number_Loans = n(),
-                   Max_T = max(n),
-                   Min_T = min(n),
-                   Mean_T = mean(n),
-                   Median_T = median(n)))
+  summarise(Number_Loans = n(),
+                   Max_T = max(n, na.rm = TRUE),
+                   Min_T = min(n, na.rm = TRUE),
+                   Mean_T = mean(n, na.rm = TRUE),
+                   Median_T = median(n, na.rm = TRUE)) %>% 
+  collect()
 ```
 
 
 ### 3. Comment on the structure of the unbalanced panel (how many (and which) countries have a single observation, discontinuities between observations, how many have at least 2 consecutive observations (which is useful to compute lags, autocorrelations, first difference and within estimators)?
+
+
+
 
 ### 4. Compute between transformed and within transformed variables for all variables. Present a table with the within, between and pooled variance for each variable. Compute the share of between and within variance in the total variance for each variable. Comment these results.
 

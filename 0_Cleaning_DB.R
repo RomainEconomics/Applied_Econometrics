@@ -6,6 +6,9 @@ library(readxl)
 library(janitor) # Pour la fonction clean_names(), ca permet de supprimer les espaces et de mettre les noms de colonnes propores
 library(COVID19)
 library(tsibble)
+library(DBI) # To connect to the database
+
+#install.packages("RSQLite")
 
 path <- 'Panel\ data_Project/Databases/'
 
@@ -152,12 +155,23 @@ add_COVID <- COVID_data %>%
 
 
 # Save the DB
-DB %>% 
+Final_DB <- DB %>% 
   left_join(bind_rows(MSA_OK, MSAtoChange) %>% mutate(MSA = as.integer(MSA)), by = 'MSA') %>% 
   mutate(Reporting_Period = sub('(.{4})(.*)', '\\1-\\2', Reporting_Period),
          Reporting_Period = yearmonth(Reporting_Period)) %>% 
   left_join(add_COVID, by = c('cbsa_code', 'Reporting_Period')) %>% 
-  mutate(Credit_score = na_if(Credit_score, 9999)) %>% # 9999 is for NaN
-  saveRDS("Data/DB.rds")
+  mutate(Credit_score = na_if(Credit_score, 9999)) 
 
-#DB <- readRDS("DB.rds")
+
+
+# -------------------------------------------------------------------------
+
+
+# Create a SQL like DB ----------------------------------------------------
+
+
+
+con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
+
+dbWriteTable(con, "DB", Final_DB)
+
