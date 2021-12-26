@@ -1,15 +1,16 @@
 library(data.table)
 library(dtplyr)
 library(dplyr, warn.conflicts = FALSE)
-library(readxl)
 library(janitor)
 library(tidyverse)
 library(sf)
 library(usmap)
+library(DBI)
 
 
+con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
+DB = tbl(con, "DB")
 
-DB <- readRDS("Data/DB.rds") 
 
 
 # What types of Banks ? ---------------------------------------------------
@@ -43,11 +44,12 @@ DB %>%
     Lender_Type == 1 ~ 'Bank',
     Lender_Type == 0 & Fintech == 0 ~ 'Shadow Bank',
     Lender_Type == 0 & Fintech == 1 ~ 'Fintech'
-  ),
-         Type = as.factor(Type)) %>% 
+  )) %>% 
+  #mutate(Type = as.factor(Type)) %>% 
   group_by(Type) %>% 
-  distinct(Loan_Seq_Number, .keep_all = T) %>% 
+  distinct(Loan_Seq_Number, .keep_all = F) %>% 
   summarise(Count = n()) %>% 
+  collect() %>% 
   mutate(Type = reorder(Type, Count)) %>% 
   ggplot(aes(x = Count, y = Type, fill = Type)) +
   geom_col() +
@@ -61,7 +63,9 @@ DB %>%
 DB %>% 
   add_count(Seller_Name) %>% 
   select(Seller_Name, n, Lender_Type, Fintech) %>% 
+  collect() %>% 
   distinct(Seller_Name, .keep_all = TRUE) %>% 
+  ungroup() %>% 
   mutate(Seller_Name = reorder(Seller_Name, n),
          Type = case_when(
            Lender_Type == 1 ~ 'Bank',
