@@ -80,7 +80,7 @@ DB %>%
   scale_x_continuous(labels = scales::comma) +
   theme(legend.position = 'bottom') 
 
-ggsave('Graphs/num_loans_by_seller.png', width = 28, height = 20, units = "cm")
+ggsave('Graphs/num_loans_by_seller.png', width = 14, height = 10, units = "cm")
 
 
 
