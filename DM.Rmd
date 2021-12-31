@@ -57,6 +57,9 @@ library(dtplyr)
 library(dplyr, warn.conflicts = FALSE)
 library(readxl)
 library(janitor)
+library(modelsummary)
+library(kableExtra)
+library(ggrepel) # for spacing text inside plots
 library(tidyverse)
 library(sf)
 library(usmap)
@@ -150,17 +153,224 @@ DB %>%
 
 #### 1. Download 5 panel data variables from World Bank and/or IMF and/or FRED databases for the recent period (1990-2020) and for the largest coverage of emerging economies: GDP/head, GDP/head PPP-adjusted (very last update), Log(population), Foreign aid/GDP (ODA), of log an index of corruption (or good public sector governance) from the World Bank. From now on, consider as your sample only country-year observations which are available for ALL the 5 variables for at least TWO CONSECUTIVE years for a given country. The full class may coordinate for this updated database. In all the following questions except perhaps the last one, the PPP adjusted GDP is not used. So we consider 4 variables excluding GDP/head PPP adjusted.
 
+```{r}
+# Import Data 
+# Inside the Data folder, get all the .RDS files except MSA_Large
+panel_data <- list.files(path =  'Data/', pattern="*[^(MSA_Large)].RDS") %>% 
+  map(., ~read_rds(paste0('Data/', .))) %>% 
+  reduce(inner_join, by = c('iso2c', 'country', 'year'))
+
+panel_data
+```
+
+```{r}
+panel_data %>% 
+  filter(country =='India') %>% 
+  arrange(year)
+```
+
+```{r}
+panel_data %>% 
+  count(year)
+```
+We don't have any observations for the Year 1997, 1999 and 2001. Thus, we will restrict ourselves to the time period between 2002 to 2019 for 88 countries. 
+
+```{r}
+panel_data <- panel_data %>%
+  filter(!year %in% c(1996, 1998, 2000))
+
+panel_data %>% 
+  count(country)
+```
+
+```{r}
+# We remove them because they have negative ODA for at least one year
+# We would need to find Gross ODA in order to have only positives values
+country_to_remove <- panel_data %>% 
+  group_by(country) %>% 
+  filter(oda_net < 0) %>% 
+  distinct(country) %>% 
+  pull()
+
+country_to_remove
+```
+
+```{r}
+panel_data <- panel_data %>% 
+  filter(!country %in% country_to_remove)
+
+panel_data %>% 
+  count(country)
+```
+
 #### 2. Compute 2 growth rates using the difference of log: the growth of GDP/head (difference of log, denoted GDPg), the growth of foreign aid ODAg (but NOT the growth for foreign aid/GDP: remove the difference of log of GDP from the difference of log of foreign aid/GDP).
+
+
+
+```{r}
+panel_data <- panel_data %>% 
+  arrange(country, year) %>% 
+  group_by(country) %>% 
+  mutate(g_gdp_per_cap = log(gdp_per_cap) - lag(log(gdp_per_cap)),
+         g_population = log(population) - lag(log(population)),
+         g_oda_net = log(oda_net) - lag(log(oda_net))) %>% 
+  ungroup()
+```
+
+```{r}
+panel_data %>% 
+  filter(country =='Brazil')
+```
+
+
+
 
 #### 3. Compute the between average over time for the first period and for the second period for the 6 variables. Provide the top 10 of countries for ODA/GDP with average over time for each period.
 
+```{r}
+panel_data %>% 
+  group_by(country) %>% 
+  mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
+  # Summarise is used  to transform our dataframe and calculate the mean for each country
+  summarise(across(where(is.double), ~mean(., na.rm = T))) %>% # across apply a function (here the mean) given a condition (is.double)
+  arrange(desc(oda_net_gdp_cap)) %>% 
+  relocate(country, oda_net_gdp_cap) %>% 
+  slice_max(oda_net_gdp_cap, n = 10)
+```
+
 #### 4. Compute the proportion of country-years observations in your database such that 0\<=ODA/GDP\<0.5%
+
+```{r}
+panel_data %>% 
+  group_by(country) %>% 
+  mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
+  filter(oda_net_gdp_cap >= 0,
+         oda_net_gdp_cap < 0.05) %>% 
+  count(country) %>% 
+  mutate(prop = round(n / 18, 2)) %>% 
+  arrange(desc(n))
+```
 
 #### 5. Compute the between and within transformations of the 6 variables over the full period. Provide the 4 histograms for ODA/GPD, growth of ODA, growth of GDP/head, corruption index for both between and within transformed variables (hence 8 histograms). Comment.
 
+
+```{r}
+# Between transformation
+between_transformation <- panel_data %>% 
+  group_by(country) %>% 
+  mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
+  summarise(across(where(is.double), mean, na.rm = T))
+```
+
+
+```{r}
+between_transformation %>% 
+  select(country, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) %>% 
+  pivot_longer(-country) %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~name, scales = 'free')
+```
+
+
+```{r}
+# Pas sur pour celui la
+# Within transformation
+panel_data %>% 
+  group_by(country) %>% 
+  mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
+  mutate(across(where(is.double),~ . -  mean(., na.rm = T))) %>% 
+  select(country, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) %>% 
+  pivot_longer(-country) %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~name, scales = 'free')
+```
+
+
+
 #### 6. Provide the 3 bivariate graphs (with acronyms for observations NIC12, for Nicaragua 2012) for between and within (hence 6 graphs) of growth of GDP/head (vertical axis) with (1) ODA/GDP, (2) the growth of ODA; of corruption index with ODA/GDP. Comment.
 
-##@# 7. Comment the between versus within correlation matrix for the 6 variables in this order
+```{r}
+between_transformation %>% 
+  pivot_longer(-c(country, g_gdp_per_cap)) %>% 
+  filter(name %in% c('g_oda_net', 'oda_net_gdp_cap')) %>% 
+  ggplot(aes(x = value, y = g_gdp_per_cap, label = country)) + 
+  geom_point() + 
+  facet_wrap(~name, scales = 'free') + 
+   geom_text_repel(size = 2.5) +
+  labs(title = 'Between Transformation', 
+       x = '',
+       y = 'Growth of GDP per capita (constant 2015$)')
+```
+
+```{r}
+between_transformation %>% 
+  ggplot(aes(x = oda_net_gdp_cap, y = corruption, label = country)) + 
+  geom_point() +
+  geom_text_repel(size = 2.5) +
+  labs(title = 'Between Transformation', 
+       x = 'Net ODA / GDP  (per capita)',
+       y = 'Corruption')
+```
+
+
+```{r}
+within_bivariate <- panel_data %>% 
+  group_by(country) %>% 
+  mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
+  mutate(across(where(is.double),~ . -  mean(., na.rm = T)),
+         # '..$' : Regex pour sélectionner les deux (un point = n'importe quelle terme)
+         # derniers ($) charactères du vecteur Year
+         # '^..' : ^ pour selectionner les deux premiers charactères
+         # '..$' : $ pour selectionner les deux derniers charactères
+         iso_year = paste0(iso2c, str_extract_all(year, '..$'))) %>% 
+  ungroup() %>% 
+  select(iso_year, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) 
+```
+
+
+```{r}
+plot_biv <- function(data, x, y) {
+  
+  data %>% 
+    ggplot(aes(x = {{ x }}, y = {{ y }}, label = iso_year)) +
+    geom_point(size = 1, alpha = 0.5) +
+    geom_text_repel(size=2) + 
+    geom_smooth(method = lm, se = FALSE, color = 'blue', size = 0.7) +
+    geom_smooth(method = loess, se = FALSE, color = 'red', size = 0.7) +
+    geom_smooth(method = lm, formula = y ~ splines::bs(x, 3), se = FALSE, color = 'orange', size = 0.7)
+  
+}
+```
+
+
+```{r}
+within_bivariate %>% 
+  plot_biv(x = oda_net_gdp_cap, y = g_gdp_per_cap)
+```
+
+```{r}
+within_bivariate %>% 
+  plot_biv(x = g_oda_net, y = g_gdp_per_cap)
+```
+
+```{r}
+within_bivariate %>% 
+  plot_biv(x = oda_net_gdp_cap, y = corruption)
+```
+
+
+#### 7. Comment the between versus within correlation matrix for the 6 variables in this order
+
+```{r}
+between_transformation %>% 
+  select(c(g_oda_net, g_gdp_per_cap, gdp_per_cap, oda_net_gdp_cap, corruption, population)) %>% 
+  #cor()%>% 
+datasummary_correlation(title = 'Correlation matrix') %>%
+kable_styling(latex_options = c("striped", "hold_position")) 
+```
+
 
 #### 8. Run a one-way fixed effect foreign aid regression on ODA/GDP function of Ln(Population) and Ln(GDP/head). Comment.
 
@@ -171,3 +381,25 @@ DB %>%
 #### 11. Propose an additional interesting estimation using this database.
 
 #### 12. Compute the between and within transformations of the 11 variables over the full period. Provide histograms for ODA/GPD, growth of ODA, growth of GDP/head for both between and within transformed. Comment.
+
+```{r}
+fe_model_plm <- plm(inv ~ capital, data = Grunfeld, 
+                    index = c("firm", "year"), 
+                    effect = "individual", model = "within")
+
+summary(fe_model_plm)
+```
+
+
+```{r}
+panel_data %>%
+  ggplot(aes(x = year, y = gdp_ppp)) +
+  geom_point() +
+  geom_line(data = panel_data %>% group_by(year) %>% summarise(gdp_mean = mean(gdp_ppp)),
+            aes(x = year, y = gdp_mean), col = "blue") +
+  scale_x_continuous(labels = as.character(unique(panel_data$year)), 
+                     breaks = unique(panel_data$year)) +
+  labs(x = "Year", y = "GDP Per capita") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
