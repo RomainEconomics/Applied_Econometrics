@@ -6,6 +6,7 @@ library(janitor) # Pour la fonction clean_names(), ca permet de supprimer les es
 library(COVID19)
 library(tsibble)
 library(DBI) # To connect to the database
+library(tidyr)
 
 
 
@@ -63,7 +64,8 @@ FREDDIE_MAC_Origination_Reduced <- FREDDIE_MAC_Origination2 %>%
 
 FREDDIE_MAC_DB <- FREDDIE_MAC_Performance2 %>% 
   inner_join(FREDDIE_MAC_Origination_Reduced, by = 'Loan_Seq_Number') %>% 
-  collect() %>% 
+
+  collect() %>%
   drop_na(Seller_Name) 
 
 
@@ -119,7 +121,6 @@ read_excel("Data/MSA_Large.xls", skip = 2) %>%
   mutate(Concatenated = paste0(fips_state_code, fips_county_code)) %>% 
   write_rds('Data/MSA_Large.RDS')
 
-readR
 MSA_OK <- DB %>% 
   count(MSA) %>% # 405 MSA
   drop_na(MSA) %>% 

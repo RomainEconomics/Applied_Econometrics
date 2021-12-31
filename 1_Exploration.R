@@ -6,12 +6,10 @@ library(tidyverse)
 library(sf)
 library(usmap)
 library(DBI)
-
+library(RSQLite)
 
 con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
 DB = tbl(con, "DB")
-
-
 
 # What types of Banks ? ---------------------------------------------------
 
@@ -100,10 +98,6 @@ DB %>% count(O_LoanToValue, sort = TRUE)
 
 DB %>% count(Postal_Code, sort = TRUE)
 
-
-
-
-
 DB %>% count(Loan_Purpose, sort = TRUE)
 
 DB %>% count(Credit_score, sort = TRUE)
@@ -125,4 +119,17 @@ install.packages("DataExplorer")
 library(DataExplorer)
 create_report(DB)
 
+plot_missing(DB)
+
+dbListFields(con, "DB")
+
+# Reformatting the "Zero Balance Code" variable
+
+DB$Zero_Balance_Code[DB$Zero_Balance_Code %in% c(02, 03, 96, 09, 15)] <- 0
+DB
+replace_na(data, replace, ...)
+
+
+DB[is.na(DB)] <- 0
+DB %>% count(Zero_Balance_Code, sort = TRUE)
 
