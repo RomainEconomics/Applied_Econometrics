@@ -46,6 +46,7 @@ header-includes:
 knitr::opts_chunk$set(echo = TRUE, 
                       message=FALSE, 
                       warning=FALSE,  
+                      results = "hold",
                       out.width = '70%',
                       fig.align='center',
                       comment = "#>")
@@ -78,11 +79,14 @@ DB %>%
 ```
 
 
+\newpage
+
 ## PART A:
 
 #### 1. In your data set, which are the variables which are varying with respect to two indices (or more if you consider inflows and outflows from one individual or country to another individual or countries? Which are the variables which are varying only with respect to time? Which are the variables which are varying only with respect to individuals?
 
 
+\newpage
 
 #### 2. What is the largest number of period T for individuals? What is the number of individuals?
 
@@ -119,35 +123,66 @@ DB %>%
   collect()
 ```
 
+\newpage
 
 #### 3. Comment on the structure of the unbalanced panel (how many (and which) countries have a single observation, discontinuities between observations, how many have at least 2 consecutive observations (which is useful to compute lags, autocorrelations, first difference and within estimators)?
 
 
-
+\newpage
 
 #### 4. Compute between transformed and within transformed variables for all variables. Present a table with the within, between and pooled variance for each variable. Compute the share of between and within variance in the total variance for each variable. Comment these results.
 
+
+\newpage
+
+
 #### 5. Plot the distribution of the within and between transformed dependent variable and of you key (preferred) explanatory variable (not all the explanatory variable) [in Burnside and Dollar: GDP growth and foreign aid EDA/GDP], using on the same graph an histogram, a normal law with same empirical mean and standard error and a kernel continuous approximation. Comment the between and within difference for each variable, and compare within/within for dependent and explanatory variable, and between/between for dependent and explanatory variable: kurtosis, skewness, non-normality, high leverage observation (far from the mean), several modes (mixture of distribution)?
+
+\newpage
+
 
 #### 6. Plot boxplot of within distribution and between distribution for the dependent variable and the key explanatory variables. Comment that you find the same insights from question 5.
 
+\newpage
+
 #### 7. Compute univariate descriptive statistics (min, Q1, median, Q3, max, mean, standard error) for Within and Between transformed variables. Is the mean different from the median and why? How many standard errors from the mean are the min and max extremes (report (MAX-average)/standard error and (MIN-average)/standard error in the tables)?
+
+\newpage
 
 #### 8. Plot the boxplot of within transformed dependent variable and the key explanatory variable by a few individual (all of them if N around 50) and only the first 20 of them for larger data set. Comment on their differences of standard errors and means for each individuals
 
+\newpage
+
 #### 9. Compare and comment the within and between transformed bivariate correlation matrix for all variables (include a time trend 1,2,.,T). Check poor simple correlation with the dependent variables and high correlation between explanatory variables.
+
+\newpage
 
 #### 10. Comment the bivariate auto-correlation and trend-correlations (check the number of observations).
 
+\newpage
+
 #### 11. Comment the bivariate graphs with linear, quadratic and Lowess fit for dependent and key explanatory variable (aid/gdp and growth of gdp): Within transformed, Between transformed.
+
+
+\newpage
+
 
 #### 12. Comment the results of estimations of Between, Within (fixed effects, (fe)) and Mundlak (random effects (re) including all X(i.) as regressors), two-way fixed effects (add year dummies in fe regression) and First differences, including all explanatory variables except the ones with high near-multicollinearity in their respective between or within space.
 
+\newpage
+
 #### 13. If one of your variable is time-invariant z(i) (Institutional quality ICRG for Burnside Dollar), run a baseline Hausman Taylor estimation including all X(i.) as instruments. Comment the results.
+
+\newpage
 
 #### 14. If one of your variable is time-invariant z(i) (Institutional quality ICRG for Burnside Dollar), run a between regression on z(i) explained by X(i.) and other time invariant variable (only with N observations). If the R2 is low, this may signal X(i.) are weak instruments poorly correlated with the variable z(i) to be instrumented. Comment.
 
+
+\newpage
+
 #### 15. Optional: mention or propose improvements to the Python, STATA, SAS or R code (copy it here). Optional: propose improvements, additional insights, and you do not know how to code them.
+
+\newpage
 
 ## PART B (update results)
 
@@ -163,11 +198,6 @@ panel_data <- list.files(path =  'Data/', pattern="*[^(MSA_Large)].RDS") %>%
 panel_data
 ```
 
-```{r}
-panel_data %>% 
-  filter(country =='India') %>% 
-  arrange(year)
-```
 
 ```{r}
 panel_data %>% 
@@ -202,6 +232,7 @@ panel_data <- panel_data %>%
 panel_data %>% 
   count(country)
 ```
+\newpage
 
 #### 2. Compute 2 growth rates using the difference of log: the growth of GDP/head (difference of log, denoted GDPg), the growth of foreign aid ODAg (but NOT the growth for foreign aid/GDP: remove the difference of log of GDP from the difference of log of foreign aid/GDP).
 
@@ -217,14 +248,8 @@ panel_data <- panel_data %>%
   ungroup()
 ```
 
-```{r}
-panel_data %>% 
-  filter(country =='Brazil')
-```
 
-
-
-
+\newpage
 #### 3. Compute the between average over time for the first period and for the second period for the 6 variables. Provide the top 10 of countries for ODA/GDP with average over time for each period.
 
 ```{r}
@@ -237,6 +262,7 @@ panel_data %>%
   relocate(country, oda_net_gdp_cap) %>% 
   slice_max(oda_net_gdp_cap, n = 10)
 ```
+\newpage
 
 #### 4. Compute the proportion of country-years observations in your database such that 0\<=ODA/GDP\<0.5%
 
@@ -250,6 +276,8 @@ panel_data %>%
   mutate(prop = round(n / 18, 2)) %>% 
   arrange(desc(n))
 ```
+
+\newpage
 
 #### 5. Compute the between and within transformations of the 6 variables over the full period. Provide the 4 histograms for ODA/GPD, growth of ODA, growth of GDP/head, corruption index for both between and within transformed variables (hence 8 histograms). Comment.
 
@@ -288,6 +316,7 @@ panel_data %>%
 ```
 
 
+\newpage
 
 #### 6. Provide the 3 bivariate graphs (with acronyms for observations NIC12, for Nicaragua 2012) for between and within (hence 6 graphs) of growth of GDP/head (vertical axis) with (1) ODA/GDP, (2) the growth of ODA; of corruption index with ODA/GDP. Comment.
 
@@ -360,6 +389,7 @@ within_bivariate %>%
   plot_biv(x = oda_net_gdp_cap, y = corruption)
 ```
 
+\newpage
 
 #### 7. Comment the between versus within correlation matrix for the 6 variables in this order
 
@@ -371,18 +401,27 @@ datasummary_correlation(title = 'Correlation matrix') %>%
 kable_styling(latex_options = c("striped", "hold_position")) 
 ```
 
+\newpage
 
 #### 8. Run a one-way fixed effect foreign aid regression on ODA/GDP function of Ln(Population) and Ln(GDP/head). Comment.
 
+\newpage
+
 #### 9. Run a one-way fixed effect of Corruption Index function of Ln(GDP/head), of ODA/GDP and the growth of ODA. Comment.
+
+\newpage
 
 #### 10. Run a one-way fixed effect with the growth of GDP/head function of Ln(GDP/head), ODA/GDP, the growth of ODA and the Corruption index.
 
+\newpage
+
 #### 11. Propose an additional interesting estimation using this database.
+
+\newpage
 
 #### 12. Compute the between and within transformations of the 11 variables over the full period. Provide histograms for ODA/GPD, growth of ODA, growth of GDP/head for both between and within transformed. Comment.
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 fe_model_plm <- plm(inv ~ capital, data = Grunfeld, 
                     index = c("firm", "year"), 
                     effect = "individual", model = "within")
