@@ -8,6 +8,8 @@ library(tsibble)
 library(DBI) # To connect to the database
 library(tidyr)
 
+
+
 #install.packages("RSQLite")
 
 path <- 'Panel\ data_Project/Databases/'
@@ -62,6 +64,7 @@ FREDDIE_MAC_Origination_Reduced <- FREDDIE_MAC_Origination2 %>%
 
 FREDDIE_MAC_DB <- FREDDIE_MAC_Performance2 %>% 
   inner_join(FREDDIE_MAC_Origination_Reduced, by = 'Loan_Seq_Number') %>% 
+
   collect() %>%
   drop_na(Seller_Name) 
 
@@ -109,7 +112,14 @@ DB <- FREDDIE_MAC_DB %>%
 
 # Cleaning MSA ------------------------------------------------------------
 
-MSA_2020 <- readRDS("Data/MSA_Large.RDS")
+MSA_2020 <- readRDS("Data/MSA_Large.RDS") %>% 
+  clean_names() %>% 
+  mutate(Concatenated = paste0(fips_state_code, fips_county_code))
+
+read_excel("Data/MSA_Large.xls", skip = 2) %>% 
+  clean_names() %>% 
+  mutate(Concatenated = paste0(fips_state_code, fips_county_code)) %>% 
+  write_rds('Data/MSA_Large.RDS')
 
 MSA_OK <- DB %>% 
   count(MSA) %>% # 405 MSA
@@ -166,7 +176,6 @@ Final_DB <- DB %>%
 
 
 # Create a SQL like DB ----------------------------------------------------
-
 
 
 con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
