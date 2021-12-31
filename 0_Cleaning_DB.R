@@ -2,11 +2,11 @@ library(data.table)
 library(dtplyr)
 library(tidyverse)
 library(dplyr, warn.conflicts = FALSE)
-library(readxl)
 library(janitor) # Pour la fonction clean_names(), ca permet de supprimer les espaces et de mettre les noms de colonnes propores
 library(COVID19)
 library(tsibble)
 library(DBI) # To connect to the database
+library(tidyr)
 
 #install.packages("RSQLite")
 
@@ -62,6 +62,7 @@ FREDDIE_MAC_Origination_Reduced <- FREDDIE_MAC_Origination2 %>%
 
 FREDDIE_MAC_DB <- FREDDIE_MAC_Performance2 %>% 
   inner_join(FREDDIE_MAC_Origination_Reduced, by = 'Loan_Seq_Number') %>% 
+  collect() %>%
   drop_na(Seller_Name) 
 
 
@@ -108,10 +109,7 @@ DB <- FREDDIE_MAC_DB %>%
 
 # Cleaning MSA ------------------------------------------------------------
 
-MSA_2020 <- read_excel("Data/MSA_Large.xls", skip = 2) %>% 
-  clean_names() %>% 
-  mutate(Concatenated = paste0(fips_state_code, fips_county_code))
-
+MSA_2020 <- readRDS("Data/MSA_Large.RDS")
 
 MSA_OK <- DB %>% 
   count(MSA) %>% # 405 MSA

@@ -62,8 +62,9 @@ library(sf)
 library(usmap)
 library(tsibble)
 library(DBI) 
-```
+library(DataExplorer)
 
+```
 
 ```{r}
 con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
@@ -74,15 +75,26 @@ DB %>%
   collect()
 ```
 
-
 ## PART A:
+
+Option 1 - Master thesis dataset
+
+Khalil's Master thesis explores the topic of the performance of securitized mortgage loans in the US in the context of the coronavirus crisis. Based on issuance and performance data for more than 346,724 mortgage loans purchased by Freddie Mac in 2020Q1, combined with neighborhood-level coronavirus data, the thesis will examine, at the US local level, whether the coronavirus outbreak affected these loans' (i) delinquency status and (ii) prepayment. In parallel, the Master thesis also enquires whether the status of the lender that originated the loan - commercial bank or shadow bank, Fintech or not - has an influence on those two loan performance metrics. 
 
 #### 1. In your data set, which are the variables which are varying with respect to two indices (or more if you consider inflows and outflows from one individual or country to another individual or countries? Which are the variables which are varying only with respect to time? Which are the variables which are varying only with respect to individuals?
 
-
+For each loan, the database records: 
+(i) time-invariant issuance metrics. Those variables vary only  with respect to individuals (in other words by loan) and do not vary over. Those time-invariant variables regroup for instance borrower credit score at issuance, the original loan to value, XXX and the lender type. 
+(ii) time-varying performance metrics. Those variables vary both with respect to time and with respect to individuals. For instance, prepayment (Zero Balance Code), Delinquency status, and unpaid principal. 
 
 #### 2. What is the largest number of period T for individuals? What is the number of individuals?
 
+```{r}
+#CTRL ALT I
+
+```
+
+The dataset counts 17 time periods, spanning from a month in 2020Q1 to June 2021. The sample consists of 346,724 loans, originated at various dates but purchased by Freddie Mac in 2020Q1. 
 
 ```{r}
 DB %>% 
@@ -95,9 +107,7 @@ DB %>%
             ) %>% 
   collect()
 ```
-
-
-
+Lenders originating and selling these mortgage loans are classified as either commercial banks or shadow banks. The latter category also includes Fintech lenders. 
 
 ```{r}
 DB %>%  
@@ -116,23 +126,278 @@ DB %>%
   collect()
 ```
 
-
 #### 3. Comment on the structure of the unbalanced panel (how many (and which) countries have a single observation, discontinuities between observations, how many have at least 2 consecutive observations (which is useful to compute lags, autocorrelations, first difference and within estimators)?
 
+As shown in the previous question, our dataset has an unbalanced panel data structure, with time periods per individual loan varying from 1 to 17.
 
+```{r}
+Final_DB %>% 
+  is.pbalanced()
+```
 
+Starting by exploring missing observations, the graph shows that 6.75% of monthly loan performance observations relate to mortgage loans originated in locations that are not in an MSA - amounting to 22,351 loans, or 6.4% of the total of mortgages in our database. Those loans are likely to have been originated in sparsely populated areas.  
 
+Monthly developments in COVID-19 confirmed cases by MSA are also missing in 8.45% of our monthly loan performance observations. This percentage includes the 6.75% of loan performance observations that are not located in an MSA. As our loan performance data start in February 2020, the remaining missing COVID-19 observations are related to monthly loan performance data that date prior to March 2020 - date at which COVID-19 cases started to be tracked. 
+
+```{r}
+plot_missing(Final_DB)
+
+Loans_by_MSA <- 
+  Final_DB %>%                             
+  group_by(MSA) %>%
+  summarise(LoansPerMSA = n_distinct(Loan_Seq_Number))
+
+```
+
+As briefly shown in question 2, we have between 1 and 17 consecutive observation for each loan contract. Nonetheless, the number of loans for which we have only 1 period of observation is very small compared to the total number of loans of the dataset - 123 out 346,724, or 0.3%. All the other loans therefore have at least 2 consecutive observations.
+
+```{r}
+Final_DB %>%
+  group_by(Loan_Seq_Number) %>%
+  tally() %>% 
+  count(n) %>%
+  summarise(Number_Periods_available = n,
+            Number_of_loans = nn)
+```
+
+None of our loan performance data display discontinuities between observations.   
 #### 4. Compute between transformed and within transformed variables for all variables. Present a table with the within, between and pooled variance for each variable. Compute the share of between and within variance in the total variance for each variable. Comment these results.
+
+Definitions of between and within transformation: XXX
+
+We carry out the calculation of within and between transformations for all variables except the binary variables - namely the lender type - because XXX. 
+
+```{r}
+between(Delinquency_Status, effect = c("individual", "time", "group"))
+between(Current_Interest_Rate, effect = c("individual", "time", "group"))
+between(E_LoanToValue, effect = c("individual", "time", "group"))
+between(Credit_score, effect = c("individual", "time", "group"))
+between(O_Debt_to_Income, effect = c("individual", "time", "group"))
+between(Current_UPB, effect = c("individual", "time", "group"))
+between(Time_to_Maturity, effect = c("individual", "time", "group"))
+between(COVID, effect = c("individual", "time", "group"))
+
+Between(Delinquency_Status, effect = c("individual", "time", "group"))
+Between(Current_Interest_Rate, effect = c("individual", "time", "group"))
+Between(E_LoanToValue, effect = c("individual", "time", "group"))
+Between(Credit_score, effect = c("individual", "time", "group"))
+Between(O_Debt_to_Income, effect = c("individual", "time", "group"))
+Between(Current_UPB, effect = c("individual", "time", "group"))
+Between(Time_to_Maturity, effect = c("individual", "time", "group"))
+Between(COVID, effect = c("individual", "time", "group"))
+
+Within(Delinquency_Status,effect = c("individual", "time", "group"))
+Within(Current_Interest_Rate,effect = c("individual", "time", "group"))
+Within(E_LoanToValue,effect = c("individual", "time", "group"))
+Within(Credit_score,effect = c("individual", "time", "group"))
+Within(O_Debt_to_Income,effect = c("individual", "time", "group"))
+Within(Current_UPB,effect = c("individual", "time", "group"))
+Within(Time_to_Maturity,effect = c("individual", "time", "group"))
+Within(COVID,effect = c("individual", "time", "group"))
+
+Sum(Delinquency_Status,effect = c("individual", "time", "group"))
+Sum(Current_Interest_Rate,effect = c("individual", "time", "group"))
+Sum(E_LoanToValue,effect = c("individual", "time", "group"))
+Sum(Credit_score,effect = c("individual", "time", "group"))
+Sum(O_Debt_to_Income,effect = c("individual", "time", "group"))
+Sum(Current_UPB,effect = c("individual", "time", "group"))
+Sum(Time_to_Maturity,effect = c("individual", "time", "group"))
+Sum(COVID,effect = c("individual", "time", "group"))
+
+Variance <- Panel_DB_KJ %>%
+  dplyr::select(Final_DB.Loan_Seq_Number, Final_DB.Reporting_Period, Delinquency_Status,
+                Current_Interest_Rate, E_LoanToValue, Credit_score, O_Debt_to_Income,
+                Current_UPB, Time_to_Maturity, COVID) %>%
+  gather(variable, value, -Final_DB.Loan_Seq_Number, -Final_DB.Reporting_Period) %>%
+  group_by(variable) %>%
+  summarize(var = var(value))
+
+Within.Variance <-c('W.Delinquency', 'W.Interest', 'W.ELTV', 'W.Score', 'W.ODTI',
+                    'W.CUPB', 'W.TTM', 'W.COVID')
+Between.Variance <- c('M.Delinquency', 'M.Interest', 'M.ELTV', 'M.Score', 'M.ODTI',
+                      'M.CUPB','M.TTM','M.COVID')
+
+Within.Variance.values  <- Panel_DB_KJ %>%
+  dplyr::select(Final_DB.Loan_Seq_Number, Final_DB.Reporting_Period, Within.Variance) %>%
+  gather(variable, value, -Final_DB.Loan_Seq_Number, -Final_DB.Reporting_Period) %>%
+  group_by(variable) %>%
+  summarize(var = var(value))
+
+Between.Variance.values  <- Panel_DB_KJ %>%
+  dplyr::select(Final_DB.Loan_Seq_Number, Final_DB.Reporting_Period, Between.Variance) %>%
+  gather(variable, value, -Final_DB.Loan_Seq_Number, -Final_DB.Reporting_Period) %>%
+  group_by(variable) %>%
+  summarize(var = var(value))
+
+Three.variances <- Variance %>% bind_cols(Within.Variance.values, Between.Variance.values) %>%
+  dplyr::select(-variable1, -variable2) %>%
+  rename(Variable = variable, Overall = var, Within = var1, Between = var2) %>%
+  mutate(`Within Variance Share` = (Within/Overall)*100,
+         `Between Variance Share` = (Between/Overall)*100) %>%
+  na.omit()
+Three.variances
+
+```
 
 #### 5. Plot the distribution of the within and between transformed dependent variable and of you key (preferred) explanatory variable (not all the explanatory variable) [in Burnside and Dollar: GDP growth and foreign aid EDA/GDP], using on the same graph an histogram, a normal law with same empirical mean and standard error and a kernel continuous approximation. Comment the between and within difference for each variable, and compare within/within for dependent and explanatory variable, and between/between for dependent and explanatory variable: kurtosis, skewness, non-normality, high leverage observation (far from the mean), several modes (mixture of distribution)?
 
+```{r}
+Top100.5. <- Top100.2. %>%
+  dplyr::select(Company, Year, M.RNIFA, W.RNIFA, M.RFD, W.RFD) %>%
+  na.omit()
+
+#Between Graph RNIFA
+Top100.5. %>%
+  ggplot(aes(x = M.RNIFA)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.05) +
+  geom_density(aes(y = ..density..), colour='red', size = 0.7, linetype = 1, adjust = 2) +
+  labs(title="Between Transformed Net Intangible Fixed Assets",
+       x = element_blank(), y = "Density")
+
+
+#Between Graph RFD
+Top100.5. %>%
+  ggplot(aes(x = M.RFD)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.05) +
+  geom_density(aes(y = ..density..), colour='red', size = 0.7, linetype = 1, adjust = 2) +
+  labs(title="Between Transformed Financial Debt",
+       x = element_blank(), y = "Density")
+
+#Within Graph RNIFA
+Top100.5. %>%
+  ggplot(aes(x = W.RNIFA)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.05) +
+  geom_density(aes(y = ..density..), colour='red', size = 0.7, linetype = 1, adjust = 2) +
+  labs(title="Within Transformed Net Intangible Fixed Assets",
+       x = element_blank(), y = "Density")
+
+#Within Graph RFD
+Top100.5. %>%
+  ggplot(aes(x = W.RNIFA)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.05) +
+  geom_density(aes(y = ..density..), colour='red', size = 0.7, linetype = 1, adjust = 2) +
+  labs(title="Within Transformed Financial Debt",
+       x = element_blank(), y = "Density")
+```
+
+
 #### 6. Plot boxplot of within distribution and between distribution for the dependent variable and the key explanatory variables. Comment that you find the same insights from question 5.
+
+```{r}
+boxplot(Top100.5.$M.RNIFA, Top100.5.$M.RFD, Top100.5.$W.RNIFA, Top100.5.$W.RFD,
+        main = "Boxplots for comparision",
+        at = c(1,2,4,5),
+        names = c("Between w", "Between", "Within", "Within"),
+        las = 1,
+        col = c("orange","red"),
+        size = 2,
+        border = "brown",
+        horizontal = TRUE,
+        notch = TRUE)
+```
+
 
 #### 7. Compute univariate descriptive statistics (min, Q1, median, Q3, max, mean, standard error) for Within and Between transformed variables. Is the mean different from the median and why? How many standard errors from the mean are the min and max extremes (report (MAX-average)/standard error and (MIN-average)/standard error in the tables)?
 
+```{r}
+#Dependent variable
+#Between
+mean.M.RNIFA <- mean(Top100.5.$M.RNIFA)
+median.M.RNIFA <- median(Top100.5.$M.RNIFA)
+range.M.RNIFA <-range(Top100.5.$M.RNIFA)
+standard.deviation.M.RNIFA <-sd(Top100.5.$M.RNIFA)
+variance.M.RNIFA <-var(Top100.5.$M.RNIFA)
+
+standard.error <- function(x) {
+  sqrt(var(x)/length(x))
+}
+standard.error.M.RNIFA <- standard.error(Top100.5.$M.RNIFA)
+skewness.M.RNIFA <-skewness(Top100.5.$M.RNIFA)
+kurtosis.M.RNIFA <-kurtosis(Top100.5.$M.RNIFA)
+minimum.M.RNIFA <-min(Top100.5.$M.RNIFA)
+Q25.M.RNIFA <-quantile(Top100.5.$M.RNIFA,.25)
+Q75.M.RNIFA <-quantile(Top100.5.$M.RNIFA,.75)
+interquartile.range.M.RNIFA <-quantile(Top100.5.$M.RNIFA,.75)-quantile(Top100.5.$M.RNIFA,.25)
+
+rbind(mean.M.RNIFA, median.M.RNIFA,range.M.RNIFA,standard.deviation.M.RNIFA,variance.M.RNIFA,standard.error.M.RNIFA,
+      skewness.M.RNIFA,kurtosis.M.RNIFA,minimum.M.RNIFA,Q25.M.RNIFA,Q75.M.RNIFA,interquartile.range.M.RNIFA)
+#within
+mean.W.RNIFA <- mean(Top100.5.$W.RNIFA)
+median.W.RNIFA <- median(Top100.5.$W.RNIFA)
+range.W.RNIFA <-range(Top100.5.$W.RNIFA)
+standard.deviation.W.RNIFA <-sd(Top100.5.$W.RNIFA)
+variance.W.RNIFA <-var(Top100.5.$W.RNIFA)
+standard.error.W.RNIFA <- standard.error(Top100.5.$W.RNIFA)
+skewness.W.RNIFA <-skewness(Top100.5.$W.RNIFA)
+kurtosis.W.RNIFA <-kurtosis(Top100.5.$W.RNIFA)
+minimum.W.RNIFA <-min(Top100.5.$W.RNIFA)
+Q25.W.RNIFA <-quantile(Top100.5.$W.RNIFA,.25)
+Q75.W.RNIFA <-quantile(Top100.5.$W.RNIFA,.75)
+interquartile.range.W.RNIFA <-quantile(Top100.5.$W.RNIFA,.75)-quantile(Top100.5.$W.RNIFA,.25)
+
+rbind(mean.W.RNIFA, median.W.RNIFA,range.W.RNIFA,standard.deviation.W.RNIFA,variance.W.RNIFA,standard.error.W.RNIFA,
+      skewness.W.RNIFA,kurtosis.W.RNIFA,minimum.W.RNIFA,Q25.W.RNIFA,Q75.W.RNIFA,interquartile.range.W.RNIFA)
+
+#Independent variable
+#Between
+mean.M.RFD <- mean(Top100.5.$M.RFD)
+median.M.RFD <- median(Top100.5.$M.RFD)
+range.M.RFD <-range(Top100.5.$M.RFD)
+standard.deviation.M.RFD <-sd(Top100.5.$M.RFD)
+variance.M.RFD <-var(Top100.5.$M.RFD)
+standard.error.M.RFD <- standard.error(Top100.5.$M.RFD)
+skewness.M.RFD <-skewness(Top100.5.$M.RFD)
+kurtosis.M.RFD <-kurtosis(Top100.5.$M.RFD)
+minimum.M.RFD <-min(Top100.5.$M.RFD)
+Q25.M.RFD <-quantile(Top100.5.$M.RFD,.25)
+Q75.M.RFD <-quantile(Top100.5.$M.RFD,.75)
+interquartile.range.M.RFD <-quantile(Top100.5.$M.RFD,.75)-quantile(Top100.5.$M.RFD,.25)
+
+rbind(mean.M.RFD, median.M.RFD,range.M.RFD,standard.deviation.M.RFD,variance.M.RFD,standard.error.M.RFD,
+      skewness.M.RFD,kurtosis.M.RFD,minimum.M.RFD,Q25.M.RFD,Q75.M.RFD,interquartile.range.M.RFD)
+#Within
+mean.W.RFD <- mean(Top100.5.$W.RFD)
+median.W.RFD <- median(Top100.5.$W.RFD)
+range.W.RFD <-range(Top100.5.$W.RFD)
+standard.deviation.W.RFD <-sd(Top100.5.$W.RFD)
+variance.W.RFD <-var(Top100.5.$W.RFD)
+standard.error.W.RFD <- standard.error(Top100.5.$W.RFD)
+skewness.W.RFD <-skewness(Top100.5.$W.RFD)
+kurtosis.W.RFD <-kurtosis(Top100.5.$W.RFD)
+minimum.W.RFD <-min(Top100.5.$W.RFD)
+Q25.W.RFD <-quantile(Top100.5.$W.RFD,.25)
+Q75.W.RFD <-quantile(Top100.5.$W.RFD,.75)
+interquartile.range.W.RFD <-quantile(Top100.5.$W.RFD,.75)-quantile(Top100.5.$W.RFD,.25)
+
+rbind(mean.W.RFD, median.W.RFD,range.W.RNIFA,standard.deviation.W.RFD,variance.W.RFD,standard.error.W.RFD,
+      skewness.W.RFD,kurtosis.W.RFD,minimum.W.RFD,Q25.W.RNIFA,Q75.W.RFD,interquartile.range.W.RFD)
+
+```
+
+
+
 #### 8. Plot the boxplot of within transformed dependent variable and the key explanatory variable by a few individual (all of them if N around 50) and only the first 20 of them for larger data set. Comment on their differences of standard errors and means for each individuals
 
+```{r}
+Sample20 <- Top100.5.[which(Top100$Company == "ACCOR" |Top100$Company == "AIRBUS OPERATIONS" |Top100$Company == "ALICORNE" |Top100$Company == "AMADEUS" |
+                           Top100$Company == "ARIANEGROUP SAS" |Top100$Company == "ASSA ABLOY FRANCE SAS" |Top100$Company == "AXA" |
+                           Top100$Company == "BARILLA FRANCE" |Top100$Company == "BAYER" |Top100$Company == "	BEAUTE PRESTIGE 1" |
+                           Top100$Company == "BEL" |Top100$Company == "BNP PARIBAS ASSET MANAGEMENT FRANCE" |Top100$Company == "BOUYGUES TELECOM" |
+                           Top100$Company == "CARREFOUR HYPERMARCHES" |Top100$Company == "CARREFOUR SYSTEMES D'INFORMATION" |Top100$Company == "CDC HABITAT" |
+                           Top100$Company == "CEGID" |Top100$Company == "CHAUSSON MATERIAUX" |Top100$Company == "CHRISTIAN DIOR COUTURE" |
+                           Top100$Company == "	CIMENTS CALCIA"), ]
+
+#Dependent 
+boxplot(Sample20$W.RNIFA ~ Sample20$Company,main="Box Plot for Within Net Intangibles", ylab="Density", xlab="Sampe of first 20 companies")
+#Independent
+boxplot(Sample20$W.RFD ~ Sample20$Company,main="Box Plot for Within Financial Debt", ylab="Density", xlab="Sampe of first 20 companies")
+
+```
+
+
 #### 9. Compare and comment the within and between transformed bivariate correlation matrix for all variables (include a time trend 1,2,.,T). Check poor simple correlation with the dependent variables and high correlation between explanatory variables.
+
+
 
 #### 10. Comment the bivariate auto-correlation and trend-correlations (check the number of observations).
 
@@ -160,7 +425,8 @@ DB %>%
 
 #### 6. Provide the 3 bivariate graphs (with acronyms for observations NIC12, for Nicaragua 2012) for between and within (hence 6 graphs) of growth of GDP/head (vertical axis) with (1) ODA/GDP, (2) the growth of ODA; of corruption index with ODA/GDP. Comment.
 
-##@# 7. Comment the between versus within correlation matrix for the 6 variables in this order
+\#\#\@\# 7. Comment the between versus within correlation matrix for the
+6 variables in this order
 
 #### 8. Run a one-way fixed effect foreign aid regression on ODA/GDP function of Ln(Population) and Ln(GDP/head). Comment.
 
