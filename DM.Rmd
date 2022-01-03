@@ -480,6 +480,8 @@ boxplot(Sample20$W.RFD ~ Sample20$Company,main="Box Plot for Within Financial De
 
 #### 1. Download 5 panel data variables from World Bank and/or IMF and/or FRED databases for the recent period (1990-2020) and for the largest coverage of emerging economies: GDP/head, GDP/head PPP-adjusted (very last update), Log(population), Foreign aid/GDP (ODA), of log an index of corruption (or good public sector governance) from the World Bank. From now on, consider as your sample only country-year observations which are available for ALL the 5 variables for at least TWO CONSECUTIVE years for a given country. The full class may coordinate for this updated database. In all the following questions except perhaps the last one, the PPP adjusted GDP is not used. So we consider 4 variables excluding GDP/head PPP adjusted.
 
+We download yearly data for 88 countries over 23 periods (between 1996 and 2019) for the following variables: (i) the World Bank corruption index, (ii) GDP per capita in euros, (iii) PPP-adjusted GDP per capita (iv) foreign aid - as % of Gross National Income and per capita - and (v) population.     
+
 ```{r}
 # Import Data 
 # Inside the Data folder, get all the .RDS files except MSA_Large
@@ -490,12 +492,14 @@ panel_data <- list.files(path =  'Data/', pattern="*[^(MSA_Large)].RDS") %>%
 panel_data
 ```
 
+Based on the below table, as we lack observations for the years 1997, 1999 and 2001, we restrict our analysis to the 2002-2019 period for those 88 countries.  
 
 ```{r}
 panel_data %>% 
   count(year)
 ```
-We don't have any observations for the Year 1997, 1999 and 2001. Thus, we will restrict ourselves to the time period between 2002 to 2019 for 88 countries. 
+
+We therefore remove the years 1996, 1998 and 2000 from our sample. 
 
 ```{r}
 panel_data <- panel_data %>%
@@ -504,6 +508,8 @@ panel_data <- panel_data %>%
 panel_data %>% 
   count(country)
 ```
+
+As we are concerned with the impact of foreign aid on economic growth, we also remove from our sample countries that have a negative net ODA. 
 
 ```{r}
 # We remove them because they have negative ODA for at least one year
@@ -516,6 +522,7 @@ country_to_remove <- panel_data %>%
 
 country_to_remove
 ```
+We therefore arrive to the following final dataset, which comprises 77 countries over 18 years (2002-2019). 
 
 ```{r}
 panel_data <- panel_data %>% 
@@ -528,7 +535,6 @@ panel_data %>%
 \newpage
 
 #### 2. Compute 2 growth rates using the difference of log: the growth of GDP/head (difference of log, denoted GDPg), the growth of foreign aid ODAg (but NOT the growth for foreign aid/GDP: remove the difference of log of GDP from the difference of log of foreign aid/GDP).
-
 
 
 ```{r}
@@ -546,27 +552,57 @@ panel_data <- panel_data %>%
 
 #### 3. Compute the between average over time for the first period and for the second period for the 6 variables. Provide the top 10 of countries for ODA/GDP with average over time for each period.
 
+We separate our dataset in two periods of approximately equal size in terms of available observations: 2002-2013 for Period 1 and 2014-2019 for Period 2.
+
+As in Jia and Williamson (2018), we compare the countries that are the top recipients of foreign aid compared to GDP in those two subsets of the database.
+
 ```{r}
-panel_data %>% 
+Period_1 <- subset(panel_data, year == 2002:2013)
+
+Period_1 %>% 
   group_by(country) %>% 
   mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
   # Summarise is used  to transform our dataframe and calculate the mean for each country
-  summarise(across(where(is.double), ~mean(., na.rm = T))) %>% # across apply a function (here the mean) given a condition (is.double)
+  summarise(across(where(is.double), ~mean(., na.rm = T))) %>% # across() applies a function (here the mean) given a condition (is.double)
   arrange(desc(oda_net_gdp_cap)) %>% 
   relocate(country, oda_net_gdp_cap) %>% 
   slice_max(oda_net_gdp_cap, n = 10)
 ```
 
+```{r}
+Period_2 <- subset(panel_data, year == 2014:2019)
+
+Period_2  %>% 
+  group_by(country) %>% 
+  mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
+  # Summarise is used  to transform our dataframe and calculate the mean for each country
+  summarise(across(where(is.double), ~mean(., na.rm = T))) %>% # across() applies a function (here the mean) given a condition (is.double)
+  arrange(desc(oda_net_gdp_cap)) %>% 
+  relocate(country, oda_net_gdp_cap) %>% 
+  slice_max(oda_net_gdp_cap, n = 10)
+
+```
+
+We notice that the 10 countries with the highest ODA/GDP average over the period differ between those two samples. While Malawi, Rwanda, Sierra Leone, Niger and the Central African Republic are top recipients in foreign aid / GDP on average for both periods 1 and 2, Burkina Faso, Cabo Verde and Tanzania have a lower relative to period 1 and are no more among the top 10 recipients in period 2. 
+
+Average ODA/GDP are higher in period 2 - ranging from 10.4% to 32% compared to 7.9% and 17% in period 1 - explained by the presence of other countries compared to period 1, namely the Gambia, Guinea-Bissau, the Solomon Islands, Burundi and Vanuatu. 
+
+The magnitude of the change in the average  ODA/GDP ratio for the Central African republic is the most striking, from 17% in period 1 to 32% on average over the period 2.
+
 \newpage
 
 #### 4. Compute the proportion of country-years observations in your database such that 0\<=ODA/GDP\<0.5%
+
+Now turning to the countries with the lowest ODA/GDP ratios, 23 countries of our dataset have ratios between 0% and 0.5%. Notably, Algeria, Brazil, Costa Rica, Dominican Republic, India, Mexico and Turkey have a ratio lower than 0.5% for all the 18 years of observations.
+
+Albania, Côte d'Ivoire, Iraq and Vietnam, while having among the lowest ODA/GDP ratios, have an ODA/GDP lower than 0.5% for only 1 year of observation.  
 
 ```{r}
 panel_data %>% 
   group_by(country) %>% 
   mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
   filter(oda_net_gdp_cap >= 0,
-         oda_net_gdp_cap < 0.05) %>% 
+         oda_net_gdp_cap < 0.005) %>% 
   count(country) %>% 
   mutate(prop = round(n / 18, 2)) %>% 
   arrange(desc(n))
@@ -576,6 +612,7 @@ panel_data %>%
 
 #### 5. Compute the between and within transformations of the 6 variables over the full period. Provide the 4 histograms for ODA/GPD, growth of ODA, growth of GDP/head, corruption index for both between and within transformed variables (hence 8 histograms). Comment.
 
+Definitions of the between and within transformation: XXX. 
 
 ```{r}
 # Between transformation
@@ -585,6 +622,7 @@ between_transformation <- panel_data %>%
   summarise(across(where(is.double), mean, na.rm = T))
 ```
 
+The important message of the below charts in the non-normality of the 'Between-transformed' variables. While we have no numeric information regarding the parameters of those distributions, we notice that the Between-transformed 'corruption' variable displays a positive skewness - it has a relatively fatter right tail. The Between-transformed 'ODA / GDP per capita' rather has the shape of a gamma distribution. 
 
 ```{r}
 between_transformation %>% 
@@ -594,7 +632,7 @@ between_transformation %>%
   geom_histogram() +
   facet_wrap(~name, scales = 'free')
 ```
-
+The most striking characteristic in the 'within-transformed' case is the apparent normality of the corruption variable and the 'ODA / GDP per capita' variable. Although those charts give no precisions about the kurtosis of those within-transformed variable, we can at least conclude that those variables are evenly-distributed around the mean. 
 
 ```{r}
 # Pas sur pour celui la
