@@ -58,6 +58,7 @@ library(dtplyr)
 library(dplyr, warn.conflicts = FALSE)
 library(readxl)
 library(janitor)
+library(plm)
 library(modelsummary)
 library(kableExtra)
 library(ggrepel) # for spacing text inside plots
@@ -79,12 +80,10 @@ DB %>%
   collect()
 ```
 
-<<<<<<< HEAD
+
 
 \newpage
 
-=======
->>>>>>> 3b08fd179db8a4542130c39ebfef6a47be8ea267
 ## PART A:
 
 Option 1 - Master thesis dataset
@@ -97,17 +96,15 @@ Khalil's Master thesis explores the topic of the performance of securitized mort
 #### 1. In your data set, which are the variables which are varying with respect to two indices (or more if you consider inflows and outflows from one individual or country to another individual or countries? Which are the variables which are varying only with respect to time? Which are the variables which are varying only with respect to individuals?
 
 For each loan, the database records: 
-(i) time-invariant issuance metrics. Those variables vary only  with respect to individuals (in other words by loan) and do not vary over. Those time-invariant variables regroup for instance borrower credit score at issuance, the original loan to value, XXX and the lender type. 
-(ii) time-varying performance metrics. Those variables vary both with respect to time and with respect to individuals. For instance, prepayment (Zero Balance Code), Delinquency status, and unpaid principal. 
+
+- (i) time-invariant issuance metrics. Those variables vary only  with respect to individuals (in other words by loan) and do not vary over. Those time-invariant variables regroup for instance borrower credit score at issuance, the original loan to value, XXX and the lender type. 
+
+- (ii) time-varying performance metrics. Those variables vary both with respect to time and with respect to individuals. For instance, prepayment (Zero Balance Code), Delinquency status, and unpaid principal. 
 
 
 
 #### 2. What is the largest number of period T for individuals? What is the number of individuals?
 
-```{r}
-#CTRL ALT I
-
-```
 
 The dataset counts 17 time periods, spanning from a month in 2020Q1 to June 2021. The sample consists of 346,724 loans, originated at various dates but purchased by Freddie Mac in 2020Q1. 
 
@@ -152,11 +149,136 @@ As shown in the previous question, our dataset has an unbalanced panel data stru
 
 \newpage
 
+```{r}
+DB_temp <- DB %>% 
+  # Reformatting the "Zero Balance Code" variable: 1 if prepaid, 0 otherwise
+  mutate(Zero_Balance_Code = ifelse(Zero_Balance_Code == 1, 1, 0),
+         Zero_Balance_Code = ifelse(is.na(Zero_Balance_Code) == T, 0, Zero_Balance_Code)) %>% 
+  # Reformatting the "Delinquency status" variable: counting "REO acquisition as "NA"
+  mutate(Delinquency_Status = ifelse(Delinquency_Status == 'RA', NA, Delinquency_Status)) %>% 
+  # Reformatting the "Estimated Loan-to-Value" variable: counting "999" as "NA"
+  mutate(E_LoanToValue = ifelse(E_LoanToValue == 999, NA, E_LoanToValue)) %>% 
+  # Reformatting the "Original Debt-to-Income" variable: counting "999" as "NA"
+  mutate(O_DebtToIncome = ifelse(O_DebtToIncome == 999, NA, O_DebtToIncome)) 
+```
+
 
 ```{r}
-Final_DB %>% 
-  is.pbalanced()
+DB_KJ <- DB_temp %>% 
+  select(Loan_Seq_Number, Reporting_Period, Delinquency_Status, Zero_Balance_Code,
+         confirmed, Credit_score, Current_Interest_Rate,Current_UPB, E_LoanToValue,
+         O_DebtToIncome, Time_to_Maturity, Lender_Type, Fintech, MSA, Seller_Name) %>% 
+  mutate(Delinquency_Status = as.integer(Delinquency_Status)) %>% 
+  collect() %>% 
+  #mutate(Reporting_Period = lubridate::ymd(Reporting_Period)) %>% 
+  mutate_if(is.integer, as.double)
 ```
+
+
+```{r}
+Loans_by_MSA <- 
+  DB %>%                             
+  group_by(MSA) %>%
+  summarise(LoansPerMSA = n_distinct(Loan_Seq_Number)) %>% 
+  collect()
+
+Loans_by_MSA
+
+# Identifying which loans are not related to an MSA (22,351 / 346,724)
+#sum(Loans_by_MSA$LoansPerMSA)
+```
+
+
+
+
+
+```{r}
+DB %>%
+  group_by(Loan_Seq_Number) %>%
+  tally() %>% 
+  count(n) %>%
+  rename(Number_Periods_available = n,
+         Number_of_loans = nn) %>% 
+  mutate(cum = cumsum(Number_of_loans),
+         percent = 100 * (cum / 346724))
+```
+
+
+
+```{r}
+# Between transformation
+between_transformation <- 
+  lazy_dt(DB_KJ[c(1:10000),]) %>% 
+  group_by(Loan_Seq_Number) %>% 
+  summarise_if(is.double, mean, na.rm = T) %>% 
+  collect()
+```
+
+```{r}
+fatal_fe_mod <- plm(Current_UPB ~ E_LoanToValue, 
+                    data = DB_KJ[c(1:10000),],
+                    index = c("Loan_Seq_Number", "Reporting_Period"), 
+                    model = "between")
+
+summary(fatal_fe_mod)
+```
+
+```{r}
+between_transformation %>% lm(Current_UPB ~ E_LoanToValue, data = .)
+```
+
+
+
+
+
+```{r}
+# Within transformation
+lazy_dt(DB_KJ) %>% 
+  group_by(Loan_Seq_Number) %>% 
+  mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
+  collect()
+```
+
+
+```{r}
+
+between(Panel_DB_KJ$E_LoanToValue, effect = c("individual", "time", "group")) %>% 
+  tibble()
+```
+
+
+```{r}
+Delinquency_Status <- Panel_DB_KJ$Delinquency_Status
+Current_Interest_Rate <- Panel_DB_KJ$Current_Interest_Rate
+E_LoanToValue <- Panel_DB_KJ$E_LoanToValue
+Credit_score <- Panel_DB_KJ$Credit_score
+O_Debt_to_Income <- Panel_DB_KJ$O_Debt_to_Income
+Current_UPB <- Panel_DB_KJ$Current_UPB
+Time_to_Maturity <- Panel_DB_KJ$Time_to_Maturity
+COVID <- Panel_DB_KJ$COVID
+
+as.matrix(Delinquency_Status)
+as.matrix(Current_Interest_Rate)
+as.matrix(E_LoanToValue)
+as.matrix(Credit_score)
+as.matrix(O_Debt_to_Income)
+as.matrix(Current_UPB)
+as.matrix(Time_to_Maturity)
+as.matrix(COVID)
+
+?between()
+
+between(Delinquency_Status, effect = c("individual", "time", "group"))
+between(Current_Interest_Rate, effect = c("individual", "time", "group"))
+between(E_LoanToValue, effect = c("individual", "time", "group"))
+between(Credit_score, effect = c("individual", "time", "group"))
+between(O_Debt_to_Income, effect = c("individual", "time", "group"))
+between(Current_UPB, effect = c("individual", "time", "group"))
+between(Time_to_Maturity, effect = c("individual", "time", "group"))
+between(COVID, effect = c("individual", "time", "group"))
+```
+
+
 
 Starting by exploring missing observations, the graph shows that 6.75% of monthly loan performance observations relate to mortgage loans originated in locations that are not in an MSA - amounting to 22,351 loans, or 6.4% of the total of mortgages in our database. Those loans are likely to have been originated in sparsely populated areas.  
 
@@ -185,6 +307,7 @@ Final_DB %>%
 ```
 
 None of our loan performance data display discontinuities between observations.   
+
 #### 4. Compute between transformed and within transformed variables for all variables. Present a table with the within, between and pooled variance for each variable. Compute the share of between and within variance in the total variance for each variable. Comment these results.
 
 
@@ -199,6 +322,16 @@ None of our loan performance data display discontinuities between observations.
 Definitions of between and within transformation: XXX
 
 We carry out the calculation of within and between transformations for all variables except the binary variables - namely the lender type - because XXX. 
+
+
+```{r}
+# Between transformation
+between_transformation <- panel_data %>% 
+  group_by(country) %>% 
+  mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
+  summarise(across(where(is.double), mean, na.rm = T))
+```
+
 
 ```{r}
 between(Delinquency_Status, effect = c("individual", "time", "group"))
@@ -535,9 +668,9 @@ panel_data %>%
 panel_data <- panel_data %>% 
   arrange(country, year) %>% 
   group_by(country) %>% 
-  mutate(g_gdp_per_cap = log(gdp_per_cap) - lag(log(gdp_per_cap)),
-         g_population = log(population) - lag(log(population)),
-         g_oda_net = log(oda_net) - lag(log(oda_net))) %>% 
+  mutate(g_gdp_per_cap = log(gdp_per_cap) - dplyr::lag(log(gdp_per_cap)),
+         g_population = log(population) - dplyr::lag(log(population)),
+         g_oda_net = log(oda_net) - dplyr::lag(log(oda_net))) %>% 
   ungroup()
 ```
 
@@ -587,6 +720,20 @@ between_transformation <- panel_data %>%
 
 
 ```{r}
+fatal_fe_mod <- plm(corruption ~ gdp_per_cap, 
+                    data = panel_data,
+                    index = c("iso2c", "year"), 
+                    model = "between")
+
+summary(fatal_fe_mod)
+```
+
+```{r}
+between_transformation %>% lm(corruption ~ gdp_per_cap, data = .)
+```
+
+
+```{r}
 between_transformation %>% 
   select(country, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) %>% 
   pivot_longer(-country) %>% 
@@ -615,7 +762,6 @@ panel_data %>%
 
 #### 6. Provide the 3 bivariate graphs (with acronyms for observations NIC12, for Nicaragua 2012) for between and within (hence 6 graphs) of growth of GDP/head (vertical axis) with (1) ODA/GDP, (2) the growth of ODA; of corruption index with ODA/GDP. Comment.
 
-#### 7. Comment the between versus within correlation matrix for the 6 variables in this order
 
 ```{r}
 between_transformation %>% 
@@ -652,8 +798,26 @@ within_bivariate <- panel_data %>%
          # '..$' : $ pour selectionner les deux derniers charactères
          iso_year = paste0(iso2c, str_extract_all(year, '..$'))) %>% 
   ungroup() %>% 
-  select(iso_year, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) 
+  select(iso_year, country, year, gdp_per_cap, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) 
 ```
+
+
+```{r}
+fatal_btw_mod <- plm(corruption ~ gdp_per_cap, 
+                    data = within_bivariate,
+                    index = c("country", "year"), 
+                    model = "within")
+
+summary(fatal_btw_mod)
+```
+
+```{r}
+within_bivariate %>% lm(corruption ~ gdp_per_cap, data = .)
+```
+
+
+
+
 
 
 ```{r}

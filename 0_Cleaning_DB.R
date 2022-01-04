@@ -168,9 +168,8 @@ Final_DB <- DB %>%
   mutate(Reporting_Period = sub('(.{4})(.*)', '\\1-\\2', Reporting_Period),
          Reporting_Period = yearmonth(Reporting_Period)) %>% 
   left_join(add_COVID, by = c('cbsa_code', 'Reporting_Period')) %>% 
-  mutate(Credit_score = na_if(Credit_score, 9999)) 
-
-
+  mutate(Credit_score = na_if(Credit_score, 9999)) %>% 
+  mutate(Reporting_Period = as.character(as.Date(Reporting_Period)))
 
 # -------------------------------------------------------------------------
 
@@ -178,7 +177,7 @@ Final_DB <- DB %>%
 # Create a SQL like DB ----------------------------------------------------
 
 
-con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
+con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite", extended_types = TRUE)
 
 dbWriteTable(con, "DB", Final_DB)
 

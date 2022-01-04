@@ -9,7 +9,7 @@ library(DBI)
 library(RSQLite)
 
 con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
-DB = tbl(con, "DB")
+DB = tbl(con, "DB") 
 
 # What types of Banks ? ---------------------------------------------------
 
