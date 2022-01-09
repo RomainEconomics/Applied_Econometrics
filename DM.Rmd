@@ -68,7 +68,7 @@ library(usmap)
 library(tsibble)
 library(DBI) 
 library(DataExplorer)
-
+library(patchwork)
 ```
 
 ```{r}
@@ -86,7 +86,7 @@ DB %>%
 
 ## PART A:
 
-Option 1 - Master thesis dataset
+#### Option 1 - Master thesis dataset
 
 Khalil's Master thesis explores the topic of the performance of securitized mortgage loans in the US in the context of the coronavirus crisis. Based on issuance and performance data for more than 346,724 mortgage loans purchased by Freddie Mac in 2020Q1, combined with neighborhood-level coronavirus data, the thesis will examine, at the US local level, whether the coronavirus outbreak affected these loans' (i) delinquency status and (ii) prepayment. In parallel, the Master thesis also enquires whether the status of the lender that originated the loan - commercial bank or shadow bank, Fintech or not - has an influence on those two loan performance metrics. 
 
@@ -94,6 +94,7 @@ Khalil's Master thesis explores the topic of the performance of securitized mort
 
 
 #### 1. In your data set, which are the variables which are varying with respect to two indices (or more if you consider inflows and outflows from one individual or country to another individual or countries? Which are the variables which are varying only with respect to time? Which are the variables which are varying only with respect to individuals?
+
 
 For each loan, the database records: 
 
@@ -147,7 +148,20 @@ DB %>%
 As shown in the previous question, our dataset has an unbalanced panel data structure, with time periods per individual loan varying from 1 to 17.
 
 
-\newpage
+
+```{r}
+DB %>%
+  group_by(Loan_Seq_Number) %>%
+  tally() %>% 
+  count(n) %>%
+  rename(Number_Periods_available = n,
+         Number_of_loans = nn) %>% 
+  mutate(cum = cumsum(Number_of_loans),
+         percent = 100 * (cum / 346724))
+```
+
+
+
 
 ```{r}
 DB_temp <- DB %>% 
@@ -167,20 +181,20 @@ DB_temp <- DB %>%
 DB_KJ <- DB_temp %>% 
   select(Loan_Seq_Number, Reporting_Period, Delinquency_Status, Zero_Balance_Code,
          confirmed, Credit_score, Current_Interest_Rate,Current_UPB, E_LoanToValue,
-         O_DebtToIncome, Time_to_Maturity, Lender_Type, Fintech, MSA, Seller_Name) %>% 
+         O_DebtToIncome, O_LoanToValue, Time_to_Maturity, Lender_Type, Fintech, MSA, Seller_Name) %>% 
   mutate(Delinquency_Status = as.integer(Delinquency_Status)) %>% 
   collect() %>% 
-  #mutate(Reporting_Period = lubridate::ymd(Reporting_Period)) %>% 
   mutate_if(is.integer, as.double)
 ```
 
 
 ```{r}
 Loans_by_MSA <- 
-  DB %>%                             
+  DB_temp %>%                             
   group_by(MSA) %>%
   summarise(LoansPerMSA = n_distinct(Loan_Seq_Number)) %>% 
-  collect()
+  collect() %>% 
+  arrange(desc(LoansPerMSA))
 
 Loans_by_MSA
 
@@ -190,93 +204,75 @@ Loans_by_MSA
 
 
 
-
+\newpage
 
 ```{r}
-DB %>%
+full_dates <- DB %>%
   group_by(Loan_Seq_Number) %>%
   tally() %>% 
-  count(n) %>%
-  rename(Number_Periods_available = n,
-         Number_of_loans = nn) %>% 
-  mutate(cum = cumsum(Number_of_loans),
-         percent = 100 * (cum / 346724))
+  filter(n == 17) %>% 
+  pull(Loan_Seq_Number)
+
+DB_test <- DB_KJ %>% 
+  filter(Loan_Seq_Number %in% full_dates)
 ```
 
 
-
-```{r}
-# Between transformation
-between_transformation <- 
-  lazy_dt(DB_KJ[c(1:10000),]) %>% 
+```{r eval=FALSE, include=FALSE}
+# NOT RUUUUNNNNNN
+DB_test %>% 
   group_by(Loan_Seq_Number) %>% 
   summarise_if(is.double, mean, na.rm = T) %>% 
-  collect()
-```
+  collect() %>% 
+  lm(Current_UPB ~ Current_Interest_Rate, data = .) %>% 
+  summary()
 
-```{r}
-fatal_fe_mod <- plm(Current_UPB ~ E_LoanToValue, 
-                    data = DB_KJ[c(1:10000),],
+
+
+plm(Current_UPB ~ Current_Interest_Rate, 
+                    data = DB_test,
                     index = c("Loan_Seq_Number", "Reporting_Period"), 
-                    model = "between")
-
-summary(fatal_fe_mod)
-```
-
-```{r}
-between_transformation %>% lm(Current_UPB ~ E_LoanToValue, data = .)
-```
+                    model = "between") %>% 
+  summary()
 
 
-
-
-
-```{r}
 # Within transformation
-lazy_dt(DB_KJ) %>% 
+test <- DB_test %>% 
   group_by(Loan_Seq_Number) %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
-  collect()
+  collect() 
+
+
+library(fixest)
+res = feols(Current_UPB ~  Current_Interest_Rate | Loan_Seq_Number, test, panel.id = ~Loan_Seq_Number+Reporting_Period)
+# By default, the SEs are clustered according to the first fixed-effect
+etable(res, cluster = c('Loan_Seq_Number', 'Reporting_Period'))
+
+
+res = feols(Current_UPB ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period, test, panel.id = ~Loan_Seq_Number+Reporting_Period)
+# By default, the SEs are clustered according to the first fixed-effect
+etable(res, cluster = c('Loan_Seq_Number', 'Reporting_Period'))
+
+
+
+fatal_btw_mod <- plm(Current_UPB ~ Current_Interest_Rate, 
+                    data = DB_test,
+                    index = c("Loan_Seq_Number", "Reporting_Period"), 
+                    model = "within")
+
+summary(fatal_btw_mod)
+
+
+lmtest::coeftest(fatal_btw_mod, vcov. = vcovHC, type = "HC1", method = "white1")
+
+TEST2 <- pdata.frame(DB_test, index = c('Loan_Seq_Number', 'Reporting_Period'))
+
+plm::between(TEST2$Current_UPB)
 ```
 
 
-```{r}
-
-between(Panel_DB_KJ$E_LoanToValue, effect = c("individual", "time", "group")) %>% 
-  tibble()
-```
 
 
-```{r}
-Delinquency_Status <- Panel_DB_KJ$Delinquency_Status
-Current_Interest_Rate <- Panel_DB_KJ$Current_Interest_Rate
-E_LoanToValue <- Panel_DB_KJ$E_LoanToValue
-Credit_score <- Panel_DB_KJ$Credit_score
-O_Debt_to_Income <- Panel_DB_KJ$O_Debt_to_Income
-Current_UPB <- Panel_DB_KJ$Current_UPB
-Time_to_Maturity <- Panel_DB_KJ$Time_to_Maturity
-COVID <- Panel_DB_KJ$COVID
-
-as.matrix(Delinquency_Status)
-as.matrix(Current_Interest_Rate)
-as.matrix(E_LoanToValue)
-as.matrix(Credit_score)
-as.matrix(O_Debt_to_Income)
-as.matrix(Current_UPB)
-as.matrix(Time_to_Maturity)
-as.matrix(COVID)
-
-?between()
-
-between(Delinquency_Status, effect = c("individual", "time", "group"))
-between(Current_Interest_Rate, effect = c("individual", "time", "group"))
-between(E_LoanToValue, effect = c("individual", "time", "group"))
-between(Credit_score, effect = c("individual", "time", "group"))
-between(O_Debt_to_Income, effect = c("individual", "time", "group"))
-between(Current_UPB, effect = c("individual", "time", "group"))
-between(Time_to_Maturity, effect = c("individual", "time", "group"))
-between(COVID, effect = c("individual", "time", "group"))
-```
 
 
 
@@ -284,31 +280,53 @@ Starting by exploring missing observations, the graph shows that 6.75% of monthl
 
 Monthly developments in COVID-19 confirmed cases by MSA are also missing in 8.45% of our monthly loan performance observations. This percentage includes the 6.75% of loan performance observations that are not located in an MSA. As our loan performance data start in February 2020, the remaining missing COVID-19 observations are related to monthly loan performance data that date prior to March 2020 - date at which COVID-19 cases started to be tracked. 
 
-```{r}
-plot_missing(Final_DB)
-
-Loans_by_MSA <- 
-  Final_DB %>%                             
-  group_by(MSA) %>%
-  summarise(LoansPerMSA = n_distinct(Loan_Seq_Number))
-
-```
 
 As briefly shown in question 2, we have between 1 and 17 consecutive observation for each loan contract. Nonetheless, the number of loans for which we have only 1 period of observation is very small compared to the total number of loans of the dataset - 123 out 346,724, or 0.3%. All the other loans therefore have at least 2 consecutive observations.
 
 
-```{r}
-Final_DB %>%
-  group_by(Loan_Seq_Number) %>%
-  tally() %>% 
-  count(n) %>%
-  summarise(Number_Periods_available = n,
-            Number_of_loans = nn)
-```
-
 None of our loan performance data display discontinuities between observations.   
 
 #### 4. Compute between transformed and within transformed variables for all variables. Present a table with the within, between and pooled variance for each variable. Compute the share of between and within variance in the total variance for each variable. Comment these results.
+
+
+- Pooled deviation = $x_{i,t} - \overline{x}$
+- Within deviation = $x_{i, t} - \overline{x}_i$
+- Between deviation = $\overline{x}_{i} - \overline{x}$
+
+```{r}
+pooled <- DB_test %>% 
+  mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
+  summarise(across(c(Delinquency_Status:Fintech), ~var(., na.rm = T))) %>% 
+  pivot_longer(c(Delinquency_Status:Fintech), names_to = 'variable', values_to = 'Pooled')
+```
+
+```{r}
+# Within transformation
+within_transformation <- DB_test %>% 
+  group_by(Loan_Seq_Number) %>% 
+  mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
+  ungroup() %>% 
+  summarise(across(c(Delinquency_Status:Fintech), ~var(., na.rm = T))) %>% 
+  pivot_longer(c(Delinquency_Status:Fintech), names_to = 'variable', values_to = 'Within')
+```
+
+```{r}
+between_transformation <- DB_test %>% 
+  group_by(Loan_Seq_Number) %>% 
+  mutate_at(vars(Delinquency_Status:Fintech), ~  mean(., na.rm = T)) %>% 
+  ungroup() %>% 
+  summarise(across(c(Delinquency_Status:Fintech), ~var(., na.rm = T))) %>% 
+  pivot_longer(c(Delinquency_Status:Fintech), names_to = 'variable', values_to = 'Between')
+```
+
+
+```{r}
+pooled %>% 
+  left_join(within_transformation, by = 'variable') %>% 
+  left_join(between_transformation, by = 'variable') %>% 
+  kable()
+```
+
 
 
 
@@ -317,7 +335,6 @@ None of our loan performance data display discontinuities between observations.
 
 #### 5. Plot the distribution of the within and between transformed dependent variable and of you key (preferred) explanatory variable (not all the explanatory variable) [in Burnside and Dollar: GDP growth and foreign aid EDA/GDP], using on the same graph an histogram, a normal law with same empirical mean and standard error and a kernel continuous approximation. Comment the between and within difference for each variable, and compare within/within for dependent and explanatory variable, and between/between for dependent and explanatory variable: kurtosis, skewness, non-normality, high leverage observation (far from the mean), several modes (mixture of distribution)?
 
-\newpage
 
 Definitions of between and within transformation: XXX
 
@@ -325,127 +342,74 @@ We carry out the calculation of within and between transformations for all varia
 
 
 ```{r}
-# Between transformation
-between_transformation <- panel_data %>% 
-  group_by(country) %>% 
-  mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
-  summarise(across(where(is.double), mean, na.rm = T))
+within_transformation_graph <- DB_test %>% 
+  group_by(Loan_Seq_Number) %>% 
+  mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
+  ungroup() 
+
+between_transformation_graph <- DB_test %>% 
+  group_by(Loan_Seq_Number) %>% 
+  mutate_at(vars(Delinquency_Status:Fintech), ~  mean(., na.rm = T)) %>% 
+  ungroup() 
 ```
 
 
 ```{r}
-between(Delinquency_Status, effect = c("individual", "time", "group"))
-between(Current_Interest_Rate, effect = c("individual", "time", "group"))
-between(E_LoanToValue, effect = c("individual", "time", "group"))
-between(Credit_score, effect = c("individual", "time", "group"))
-between(O_Debt_to_Income, effect = c("individual", "time", "group"))
-between(Current_UPB, effect = c("individual", "time", "group"))
-between(Time_to_Maturity, effect = c("individual", "time", "group"))
-between(COVID, effect = c("individual", "time", "group"))
+within_between_plot <- function(col, adjust = 1) {
+  # col is the name of the variable we're interested in
+  # adjust is used to smooth the kernel curve (the black one)
+  
+  within_data <- within_transformation_graph %>% 
+  select( {{ col }} ) %>% 
+  drop_na() 
+  
+  between_data <- between_transformation_graph %>% 
+  select( {{ col }} ) %>% 
+  drop_na()
+  
+  # Get the name of the variable for the title plot
+  col_name <- within_data %>% names()
 
-Between(Delinquency_Status, effect = c("individual", "time", "group"))
-Between(Current_Interest_Rate, effect = c("individual", "time", "group"))
-Between(E_LoanToValue, effect = c("individual", "time", "group"))
-Between(Credit_score, effect = c("individual", "time", "group"))
-Between(O_Debt_to_Income, effect = c("individual", "time", "group"))
-Between(Current_UPB, effect = c("individual", "time", "group"))
-Between(Time_to_Maturity, effect = c("individual", "time", "group"))
-Between(COVID, effect = c("individual", "time", "group"))
 
-Within(Delinquency_Status,effect = c("individual", "time", "group"))
-Within(Current_Interest_Rate,effect = c("individual", "time", "group"))
-Within(E_LoanToValue,effect = c("individual", "time", "group"))
-Within(Credit_score,effect = c("individual", "time", "group"))
-Within(O_Debt_to_Income,effect = c("individual", "time", "group"))
-Within(Current_UPB,effect = c("individual", "time", "group"))
-Within(Time_to_Maturity,effect = c("individual", "time", "group"))
-Within(COVID,effect = c("individual", "time", "group"))
+within_plot <- ggplot(within_data, aes( {{ col }} )) +      
+  # To compute the histogram 
+  geom_histogram(aes(y = ..density..)) +
+  # To compute the normal curve
+  stat_function(fun = dnorm,
+                args = list(mean = mean(within_data %>% pull()), # there's only 1 column
+                            sd = sd(within_data %>% pull())), # pull is like within_data$col
+                col = "#1b98e0",
+                size = 1) +
+  # To compute the kernel distribution
+  geom_density(adjust = adjust)  + 
+  labs(title = paste('Within transformation for ', col_name))
 
-Sum(Delinquency_Status,effect = c("individual", "time", "group"))
-Sum(Current_Interest_Rate,effect = c("individual", "time", "group"))
-Sum(E_LoanToValue,effect = c("individual", "time", "group"))
-Sum(Credit_score,effect = c("individual", "time", "group"))
-Sum(O_Debt_to_Income,effect = c("individual", "time", "group"))
-Sum(Current_UPB,effect = c("individual", "time", "group"))
-Sum(Time_to_Maturity,effect = c("individual", "time", "group"))
-Sum(COVID,effect = c("individual", "time", "group"))
+between_plot <- ggplot(between_data, aes( {{ col }} )) +        
+  geom_histogram(aes(y = ..density..)) +
+  stat_function(fun = dnorm,
+                args = list(mean = mean(between_data %>% pull()),
+                            sd = sd(between_data %>% pull())),
+                col = "#1b98e0",
+                size = 1) +
+  geom_density(adjust = adjust)  + 
+  labs(title = paste('Between transformation for ', col_name))
 
-Variance <- Panel_DB_KJ %>%
-  dplyr::select(Final_DB.Loan_Seq_Number, Final_DB.Reporting_Period, Delinquency_Status,
-                Current_Interest_Rate, E_LoanToValue, Credit_score, O_Debt_to_Income,
-                Current_UPB, Time_to_Maturity, COVID) %>%
-  gather(variable, value, -Final_DB.Loan_Seq_Number, -Final_DB.Reporting_Period) %>%
-  group_by(variable) %>%
-  summarize(var = var(value))
-
-Within.Variance <-c('W.Delinquency', 'W.Interest', 'W.ELTV', 'W.Score', 'W.ODTI',
-                    'W.CUPB', 'W.TTM', 'W.COVID')
-Between.Variance <- c('M.Delinquency', 'M.Interest', 'M.ELTV', 'M.Score', 'M.ODTI',
-                      'M.CUPB','M.TTM','M.COVID')
-
-Within.Variance.values  <- Panel_DB_KJ %>%
-  dplyr::select(Final_DB.Loan_Seq_Number, Final_DB.Reporting_Period, Within.Variance) %>%
-  gather(variable, value, -Final_DB.Loan_Seq_Number, -Final_DB.Reporting_Period) %>%
-  group_by(variable) %>%
-  summarize(var = var(value))
-
-Between.Variance.values  <- Panel_DB_KJ %>%
-  dplyr::select(Final_DB.Loan_Seq_Number, Final_DB.Reporting_Period, Between.Variance) %>%
-  gather(variable, value, -Final_DB.Loan_Seq_Number, -Final_DB.Reporting_Period) %>%
-  group_by(variable) %>%
-  summarize(var = var(value))
-
-Three.variances <- Variance %>% bind_cols(Within.Variance.values, Between.Variance.values) %>%
-  dplyr::select(-variable1, -variable2) %>%
-  rename(Variable = variable, Overall = var, Within = var1, Between = var2) %>%
-  mutate(`Within Variance Share` = (Within/Overall)*100,
-         `Between Variance Share` = (Between/Overall)*100) %>%
-  na.omit()
-Three.variances
-
+within_plot + between_plot
+}
 ```
 
-#### 5. Plot the distribution of the within and between transformed dependent variable and of you key (preferred) explanatory variable (not all the explanatory variable) [in Burnside and Dollar: GDP growth and foreign aid EDA/GDP], using on the same graph an histogram, a normal law with same empirical mean and standard error and a kernel continuous approximation. Comment the between and within difference for each variable, and compare within/within for dependent and explanatory variable, and between/between for dependent and explanatory variable: kurtosis, skewness, non-normality, high leverage observation (far from the mean), several modes (mixture of distribution)?
 
-```{r}
-Top100.5. <- Top100.2. %>%
-  dplyr::select(Company, Year, M.RNIFA, W.RNIFA, M.RFD, W.RFD) %>%
-  na.omit()
-
-#Between Graph RNIFA
-Top100.5. %>%
-  ggplot(aes(x = M.RNIFA)) +
-  geom_histogram(aes(y = ..density..), binwidth = 0.05) +
-  geom_density(aes(y = ..density..), colour='red', size = 0.7, linetype = 1, adjust = 2) +
-  labs(title="Between Transformed Net Intangible Fixed Assets",
-       x = element_blank(), y = "Density")
-
-
-#Between Graph RFD
-Top100.5. %>%
-  ggplot(aes(x = M.RFD)) +
-  geom_histogram(aes(y = ..density..), binwidth = 0.05) +
-  geom_density(aes(y = ..density..), colour='red', size = 0.7, linetype = 1, adjust = 2) +
-  labs(title="Between Transformed Financial Debt",
-       x = element_blank(), y = "Density")
-
-#Within Graph RNIFA
-Top100.5. %>%
-  ggplot(aes(x = W.RNIFA)) +
-  geom_histogram(aes(y = ..density..), binwidth = 0.05) +
-  geom_density(aes(y = ..density..), colour='red', size = 0.7, linetype = 1, adjust = 2) +
-  labs(title="Within Transformed Net Intangible Fixed Assets",
-       x = element_blank(), y = "Density")
-
-#Within Graph RFD
-Top100.5. %>%
-  ggplot(aes(x = W.RNIFA)) +
-  geom_histogram(aes(y = ..density..), binwidth = 0.05) +
-  geom_density(aes(y = ..density..), colour='red', size = 0.7, linetype = 1, adjust = 2) +
-  labs(title="Within Transformed Financial Debt",
-       x = element_blank(), y = "Density")
+```{r fig.height = 7, fig.width = 12}
+within_between_plot(confirmed, adjust = 10) 
 ```
->>>>>>> 3b08fd179db8a4542130c39ebfef6a47be8ea267
+
+```{r fig.height = 8, fig.width = 14}
+within_between_plot(E_LoanToValue, adjust = 10)
+```
+
+
+
+
 
 
 #### 6. Plot boxplot of within distribution and between distribution for the dependent variable and the key explanatory variables. Comment that you find the same insights from question 5.
@@ -466,116 +430,13 @@ Top100.5. %>%
 \newpage
 
 
-```{r}
-boxplot(Top100.5.$M.RNIFA, Top100.5.$M.RFD, Top100.5.$W.RNIFA, Top100.5.$W.RFD,
-        main = "Boxplots for comparision",
-        at = c(1,2,4,5),
-        names = c("Between w", "Between", "Within", "Within"),
-        las = 1,
-        col = c("orange","red"),
-        size = 2,
-        border = "brown",
-        horizontal = TRUE,
-        notch = TRUE)
-```
 
 
 #### 7. Compute univariate descriptive statistics (min, Q1, median, Q3, max, mean, standard error) for Within and Between transformed variables. Is the mean different from the median and why? How many standard errors from the mean are the min and max extremes (report (MAX-average)/standard error and (MIN-average)/standard error in the tables)?
 
-```{r}
-#Dependent variable
-#Between
-mean.M.RNIFA <- mean(Top100.5.$M.RNIFA)
-median.M.RNIFA <- median(Top100.5.$M.RNIFA)
-range.M.RNIFA <-range(Top100.5.$M.RNIFA)
-standard.deviation.M.RNIFA <-sd(Top100.5.$M.RNIFA)
-variance.M.RNIFA <-var(Top100.5.$M.RNIFA)
-
-standard.error <- function(x) {
-  sqrt(var(x)/length(x))
-}
-standard.error.M.RNIFA <- standard.error(Top100.5.$M.RNIFA)
-skewness.M.RNIFA <-skewness(Top100.5.$M.RNIFA)
-kurtosis.M.RNIFA <-kurtosis(Top100.5.$M.RNIFA)
-minimum.M.RNIFA <-min(Top100.5.$M.RNIFA)
-Q25.M.RNIFA <-quantile(Top100.5.$M.RNIFA,.25)
-Q75.M.RNIFA <-quantile(Top100.5.$M.RNIFA,.75)
-interquartile.range.M.RNIFA <-quantile(Top100.5.$M.RNIFA,.75)-quantile(Top100.5.$M.RNIFA,.25)
-
-rbind(mean.M.RNIFA, median.M.RNIFA,range.M.RNIFA,standard.deviation.M.RNIFA,variance.M.RNIFA,standard.error.M.RNIFA,
-      skewness.M.RNIFA,kurtosis.M.RNIFA,minimum.M.RNIFA,Q25.M.RNIFA,Q75.M.RNIFA,interquartile.range.M.RNIFA)
-#within
-mean.W.RNIFA <- mean(Top100.5.$W.RNIFA)
-median.W.RNIFA <- median(Top100.5.$W.RNIFA)
-range.W.RNIFA <-range(Top100.5.$W.RNIFA)
-standard.deviation.W.RNIFA <-sd(Top100.5.$W.RNIFA)
-variance.W.RNIFA <-var(Top100.5.$W.RNIFA)
-standard.error.W.RNIFA <- standard.error(Top100.5.$W.RNIFA)
-skewness.W.RNIFA <-skewness(Top100.5.$W.RNIFA)
-kurtosis.W.RNIFA <-kurtosis(Top100.5.$W.RNIFA)
-minimum.W.RNIFA <-min(Top100.5.$W.RNIFA)
-Q25.W.RNIFA <-quantile(Top100.5.$W.RNIFA,.25)
-Q75.W.RNIFA <-quantile(Top100.5.$W.RNIFA,.75)
-interquartile.range.W.RNIFA <-quantile(Top100.5.$W.RNIFA,.75)-quantile(Top100.5.$W.RNIFA,.25)
-
-rbind(mean.W.RNIFA, median.W.RNIFA,range.W.RNIFA,standard.deviation.W.RNIFA,variance.W.RNIFA,standard.error.W.RNIFA,
-      skewness.W.RNIFA,kurtosis.W.RNIFA,minimum.W.RNIFA,Q25.W.RNIFA,Q75.W.RNIFA,interquartile.range.W.RNIFA)
-
-#Independent variable
-#Between
-mean.M.RFD <- mean(Top100.5.$M.RFD)
-median.M.RFD <- median(Top100.5.$M.RFD)
-range.M.RFD <-range(Top100.5.$M.RFD)
-standard.deviation.M.RFD <-sd(Top100.5.$M.RFD)
-variance.M.RFD <-var(Top100.5.$M.RFD)
-standard.error.M.RFD <- standard.error(Top100.5.$M.RFD)
-skewness.M.RFD <-skewness(Top100.5.$M.RFD)
-kurtosis.M.RFD <-kurtosis(Top100.5.$M.RFD)
-minimum.M.RFD <-min(Top100.5.$M.RFD)
-Q25.M.RFD <-quantile(Top100.5.$M.RFD,.25)
-Q75.M.RFD <-quantile(Top100.5.$M.RFD,.75)
-interquartile.range.M.RFD <-quantile(Top100.5.$M.RFD,.75)-quantile(Top100.5.$M.RFD,.25)
-
-rbind(mean.M.RFD, median.M.RFD,range.M.RFD,standard.deviation.M.RFD,variance.M.RFD,standard.error.M.RFD,
-      skewness.M.RFD,kurtosis.M.RFD,minimum.M.RFD,Q25.M.RFD,Q75.M.RFD,interquartile.range.M.RFD)
-#Within
-mean.W.RFD <- mean(Top100.5.$W.RFD)
-median.W.RFD <- median(Top100.5.$W.RFD)
-range.W.RFD <-range(Top100.5.$W.RFD)
-standard.deviation.W.RFD <-sd(Top100.5.$W.RFD)
-variance.W.RFD <-var(Top100.5.$W.RFD)
-standard.error.W.RFD <- standard.error(Top100.5.$W.RFD)
-skewness.W.RFD <-skewness(Top100.5.$W.RFD)
-kurtosis.W.RFD <-kurtosis(Top100.5.$W.RFD)
-minimum.W.RFD <-min(Top100.5.$W.RFD)
-Q25.W.RFD <-quantile(Top100.5.$W.RFD,.25)
-Q75.W.RFD <-quantile(Top100.5.$W.RFD,.75)
-interquartile.range.W.RFD <-quantile(Top100.5.$W.RFD,.75)-quantile(Top100.5.$W.RFD,.25)
-
-rbind(mean.W.RFD, median.W.RFD,range.W.RNIFA,standard.deviation.W.RFD,variance.W.RFD,standard.error.W.RFD,
-      skewness.W.RFD,kurtosis.W.RFD,minimum.W.RFD,Q25.W.RNIFA,Q75.W.RFD,interquartile.range.W.RFD)
-
-```
-
 
 
 #### 8. Plot the boxplot of within transformed dependent variable and the key explanatory variable by a few individual (all of them if N around 50) and only the first 20 of them for larger data set. Comment on their differences of standard errors and means for each individuals
-
-```{r}
-Sample20 <- Top100.5.[which(Top100$Company == "ACCOR" |Top100$Company == "AIRBUS OPERATIONS" |Top100$Company == "ALICORNE" |Top100$Company == "AMADEUS" |
-                           Top100$Company == "ARIANEGROUP SAS" |Top100$Company == "ASSA ABLOY FRANCE SAS" |Top100$Company == "AXA" |
-                           Top100$Company == "BARILLA FRANCE" |Top100$Company == "BAYER" |Top100$Company == "	BEAUTE PRESTIGE 1" |
-                           Top100$Company == "BEL" |Top100$Company == "BNP PARIBAS ASSET MANAGEMENT FRANCE" |Top100$Company == "BOUYGUES TELECOM" |
-                           Top100$Company == "CARREFOUR HYPERMARCHES" |Top100$Company == "CARREFOUR SYSTEMES D'INFORMATION" |Top100$Company == "CDC HABITAT" |
-                           Top100$Company == "CEGID" |Top100$Company == "CHAUSSON MATERIAUX" |Top100$Company == "CHRISTIAN DIOR COUTURE" |
-                           Top100$Company == "	CIMENTS CALCIA"), ]
-
-#Dependent 
-boxplot(Sample20$W.RNIFA ~ Sample20$Company,main="Box Plot for Within Net Intangibles", ylab="Density", xlab="Sampe of first 20 companies")
-#Independent
-boxplot(Sample20$W.RFD ~ Sample20$Company,main="Box Plot for Within Financial Debt", ylab="Density", xlab="Sampe of first 20 companies")
-
-```
 
 
 #### 9. Compare and comment the within and between transformed bivariate correlation matrix for all variables (include a time trend 1,2,.,T). Check poor simple correlation with the dependent variables and high correlation between explanatory variables.
@@ -757,19 +618,6 @@ between_transformation <- panel_data %>%
 
 The important message of the below charts in the non-normality of the 'Between-transformed' variables. While we have no numeric information regarding the parameters of those distributions, we notice that the Between-transformed 'corruption' variable displays a positive skewness - it has a relatively fatter right tail. The Between-transformed 'ODA / GDP per capita' rather has the shape of a gamma distribution. 
 
-```{r}
-fatal_fe_mod <- plm(corruption ~ gdp_per_cap, 
-                    data = panel_data,
-                    index = c("iso2c", "year"), 
-                    model = "between")
-
-summary(fatal_fe_mod)
-```
-
-```{r}
-between_transformation %>% lm(corruption ~ gdp_per_cap, data = .)
-```
-
 
 ```{r}
 between_transformation %>% 
@@ -782,7 +630,6 @@ between_transformation %>%
 The most striking characteristic in the 'within-transformed' case is the apparent normality of the corruption variable and the 'ODA / GDP per capita' variable. Although those charts give no precisions about the kurtosis of those within-transformed variable, we can at least conclude that those variables are evenly-distributed around the mean. 
 
 ```{r}
-# Pas sur pour celui la
 # Within transformation
 panel_data %>% 
   group_by(country) %>% 
@@ -791,8 +638,9 @@ panel_data %>%
   select(country, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) %>% 
   pivot_longer(-country) %>% 
   ggplot(aes(x = value)) +
-  geom_histogram() +
+  geom_histogram(bins = 50) +
   facet_wrap(~name, scales = 'free')
+
 ```
 
 
@@ -834,9 +682,9 @@ within_bivariate <- panel_data %>%
          # derniers ($) charactères du vecteur Year
          # '^..' : ^ pour selectionner les deux premiers charactères
          # '..$' : $ pour selectionner les deux derniers charactères
-         iso_year = paste0(iso2c, str_extract_all(year, '..$'))) %>% 
+         country_year = paste0(country, '-', str_extract_all(year, '..$'))) %>% 
   ungroup() %>% 
-  select(iso_year, country, year, gdp_per_cap, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) 
+  select(country_year, country, year, gdp_per_cap, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) 
 ```
 
 
@@ -850,7 +698,7 @@ summary(fatal_btw_mod)
 ```
 
 ```{r}
-within_bivariate %>% lm(corruption ~ gdp_per_cap, data = .)
+within_bivariate %>% lm(corruption ~ -1 + gdp_per_cap, data = .)
 ```
 
 
@@ -862,7 +710,7 @@ within_bivariate %>% lm(corruption ~ gdp_per_cap, data = .)
 plot_biv <- function(data, x, y) {
   
   data %>% 
-    ggplot(aes(x = {{ x }}, y = {{ y }}, label = iso_year)) +
+    ggplot(aes(x = {{ x }}, y = {{ y }}, label = country_year)) +
     geom_point(size = 1, alpha = 0.5) +
     geom_text_repel(size=2) + 
     geom_smooth(method = lm, se = FALSE, color = 'blue', size = 0.7) +
@@ -902,6 +750,19 @@ kable_styling(latex_options = c("striped", "hold_position"))
 
 \newpage
 
+
+```{r}
+fatal_fe_mod <- plm(corruption ~ gdp_per_cap, 
+                    data = panel_data,
+                    index = c("iso2c", "year"), 
+                    model = "between")
+
+summary(fatal_fe_mod)
+```
+
+```{r}
+between_transformation %>% lm(corruption ~ gdp_per_cap, data = .)
+```
 #### 8. Run a one-way fixed effect foreign aid regression on ODA/GDP function of Ln(Population) and Ln(GDP/head). Comment.
 
 \newpage
