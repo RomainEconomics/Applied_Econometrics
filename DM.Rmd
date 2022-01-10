@@ -42,6 +42,7 @@ header-includes:
 \rfoot{Page \thepage}
 \maketitle
 ```
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, 
                       message=FALSE, 
@@ -59,6 +60,7 @@ library(dplyr, warn.conflicts = FALSE)
 library(readxl)
 library(janitor)
 library(plm)
+library(fixest)
 library(modelsummary)
 library(kableExtra)
 library(ggrepel) # for spacing text inside plots
@@ -69,6 +71,7 @@ library(tsibble)
 library(DBI) 
 library(DataExplorer)
 library(patchwork)
+library(pander)
 ```
 
 ```{r}
@@ -120,6 +123,7 @@ DB %>%
             ) %>% 
   collect()
 ```
+
 Lenders originating and selling these mortgage loans are classified as either commercial banks or shadow banks. The latter category also includes Fintech lenders. 
 
 ```{r}
@@ -169,11 +173,13 @@ DB_temp <- DB %>%
   mutate(Zero_Balance_Code = ifelse(Zero_Balance_Code == 1, 1, 0),
          Zero_Balance_Code = ifelse(is.na(Zero_Balance_Code) == T, 0, Zero_Balance_Code)) %>% 
   # Reformatting the "Delinquency status" variable: counting "REO acquisition as "NA"
-  mutate(Delinquency_Status = ifelse(Delinquency_Status == 'RA', NA, Delinquency_Status)) %>% 
+  mutate(Delinquency_Status = ifelse(Delinquency_Status == 'RA', NA, Delinquency_Status),
+         Delinquency_Status = ifelse(Delinquency_Status == '0', '0', '1')) %>% 
   # Reformatting the "Estimated Loan-to-Value" variable: counting "999" as "NA"
   mutate(E_LoanToValue = ifelse(E_LoanToValue == 999, NA, E_LoanToValue)) %>% 
   # Reformatting the "Original Debt-to-Income" variable: counting "999" as "NA"
   mutate(O_DebtToIncome = ifelse(O_DebtToIncome == 999, NA, O_DebtToIncome)) 
+
 ```
 
 
@@ -216,61 +222,6 @@ full_dates <- DB %>%
 DB_test <- DB_KJ %>% 
   filter(Loan_Seq_Number %in% full_dates)
 ```
-
-
-```{r eval=FALSE, include=FALSE}
-# NOT RUUUUNNNNNN
-DB_test %>% 
-  group_by(Loan_Seq_Number) %>% 
-  summarise_if(is.double, mean, na.rm = T) %>% 
-  collect() %>% 
-  lm(Current_UPB ~ Current_Interest_Rate, data = .) %>% 
-  summary()
-
-
-
-plm(Current_UPB ~ Current_Interest_Rate, 
-                    data = DB_test,
-                    index = c("Loan_Seq_Number", "Reporting_Period"), 
-                    model = "between") %>% 
-  summary()
-
-
-# Within transformation
-test <- DB_test %>% 
-  group_by(Loan_Seq_Number) %>% 
-  mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
-  collect() 
-
-
-library(fixest)
-res = feols(Current_UPB ~  Current_Interest_Rate | Loan_Seq_Number, test, panel.id = ~Loan_Seq_Number+Reporting_Period)
-# By default, the SEs are clustered according to the first fixed-effect
-etable(res, cluster = c('Loan_Seq_Number', 'Reporting_Period'))
-
-
-res = feols(Current_UPB ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period, test, panel.id = ~Loan_Seq_Number+Reporting_Period)
-# By default, the SEs are clustered according to the first fixed-effect
-etable(res, cluster = c('Loan_Seq_Number', 'Reporting_Period'))
-
-
-
-fatal_btw_mod <- plm(Current_UPB ~ Current_Interest_Rate, 
-                    data = DB_test,
-                    index = c("Loan_Seq_Number", "Reporting_Period"), 
-                    model = "within")
-
-summary(fatal_btw_mod)
-
-
-lmtest::coeftest(fatal_btw_mod, vcov. = vcovHC, type = "HC1", method = "white1")
-
-TEST2 <- pdata.frame(DB_test, index = c('Loan_Seq_Number', 'Reporting_Period'))
-
-plm::between(TEST2$Current_UPB)
-```
-
-
 
 
 
@@ -350,12 +301,12 @@ within_transformation_graph <- DB_test %>%
 
 between_transformation_graph <- DB_test %>% 
   group_by(Loan_Seq_Number) %>% 
-  mutate_at(vars(Delinquency_Status:Fintech), ~  mean(., na.rm = T)) %>% 
+  summarise_at(vars(Delinquency_Status:Fintech), ~  mean(., na.rm = T)) %>% 
   ungroup() 
 ```
 
 
-```{r}
+```{r include=FALSE}
 within_between_plot <- function(col, adjust = 1) {
   # col is the name of the variable we're interested in
   # adjust is used to smooth the kernel curve (the black one)
@@ -444,7 +395,7 @@ boxplot_plot(within_transformation_graph, confirmed, 'Confirmed within') +
 #### 7. Compute univariate descriptive statistics (min, Q1, median, Q3, max, mean, standard error) for Within and Between transformed variables. Is the mean different from the median and why? How many standard errors from the mean are the min and max extremes (report (MAX-average)/standard error and (MIN-average)/standard error in the tables)?
 
 
-```{r}
+```{r include=FALSE}
 univ_stats <- function(data, col, title) {
   
   data %>% 
@@ -465,8 +416,8 @@ univ_stats <- function(data, col, title) {
 ```{r}
 univ_stats(within_transformation_graph, confirmed, 'Confirmed Within') %>% 
   left_join( univ_stats(between_transformation_graph, confirmed, 'Confirmed Between'), by =' ') %>%
-  left_join( univ_stats(within_transformation_graph, confirmed, 'E_LoanToValue Within'), by =' ') %>%
-  left_join( univ_stats(between_transformation_graph, confirmed, 'E_LoanToValue Between'), by =' ') %>% 
+  left_join( univ_stats(within_transformation_graph, E_LoanToValue, 'E_LoanToValue Within'), by =' ') %>%
+  left_join( univ_stats(between_transformation_graph, E_LoanToValue, 'E_LoanToValue Between'), by =' ') %>% 
   kable() %>%
 kable_styling(latex_options = c("striped", "hold_position"))
 ```
@@ -477,9 +428,45 @@ kable_styling(latex_options = c("striped", "hold_position"))
 
 #### 8. Plot the boxplot of within transformed dependent variable and the key explanatory variable by a few individual (all of them if N around 50) and only the first 20 of them for larger data set. Comment on their differences of standard errors and means for each individuals
 
+```{r}
+random_20_indiv <- within_transformation_graph %>% 
+  distinct(Loan_Seq_Number) %>% 
+  slice_sample(n = 20) %>% 
+  pull()
+
+within_transformation_graph %>% 
+  filter(Loan_Seq_Number %in% random_20_indiv) %>% 
+  ggplot(aes(x = reorder(Loan_Seq_Number, Current_UPB), y = Current_UPB)) +
+  geom_boxplot() +
+  coord_flip()
+```
+
 \newpage
 
 #### 9. Compare and comment the within and between transformed bivariate correlation matrix for all variables (include a time trend 1,2,.,T). Check poor simple correlation with the dependent variables and high correlation between explanatory variables.
+
+```{r}
+within_transformation_graph %>% 
+  mutate(Reporting_Period = as.numeric(as.factor(Reporting_Period)),
+         MSA = as.factor(MSA),
+         Seller_Name = as.factor(Seller_Name)) %>% 
+  select(-Loan_Seq_Number, - MSA, -Seller_Name, - Credit_score, -Lender_Type, -Fintech,
+         -O_DebtToIncome, -O_LoanToValue ) %>% 
+datasummary_correlation(title = 'Correlation matrix within', fmt = 3) %>%
+kable_styling(latex_options = c("striped", "hold_position")) %>%
+row_spec(0, angle = 90)
+```
+
+```{r}
+between_transformation_graph %>% 
+  select(-Loan_Seq_Number) %>% 
+datasummary_correlation(title = 'Correlation matrix between', fmt = 3) %>%
+kable_styling(latex_options = c("striped", "hold_position", "scale_down")) %>%
+row_spec(0, angle = 90)
+```
+
+
+
 
 \newpage
 
@@ -487,19 +474,140 @@ kable_styling(latex_options = c("striped", "hold_position"))
 
 #### 10. Comment the bivariate auto-correlation and trend-correlations (check the number of observations).
 
+Not sure about the results here
+
+```{r}
+# Correlation with past values using within transformation
+within_transformation_graph %>% 
+  mutate(Reporting_Period = as.numeric(as.factor(Reporting_Period)),
+         MSA = as.factor(MSA),
+         Seller_Name = as.factor(Seller_Name)) %>% 
+  select(-Loan_Seq_Number, -MSA, -Seller_Name, - Credit_score, -Lender_Type, -Fintech,
+         -O_DebtToIncome, -O_LoanToValue ) %>% 
+  group_by(Reporting_Period) %>% 
+  summarise(across(Delinquency_Status:Time_to_Maturity, ~mean(., na.rm = T))) %>% 
+  summarise(across(Delinquency_Status:Time_to_Maturity, ~cor(., dplyr::lag(.), use = "complete.obs"))) %>% 
+  pivot_longer(Delinquency_Status:Time_to_Maturity)
+```
+
+
+```{r}
+# Correlation with the trend
+test <- within_transformation_graph %>% 
+  mutate(Reporting_Period = as.numeric(as.factor(Reporting_Period)),
+         MSA = as.factor(MSA),
+         Seller_Name = as.factor(Seller_Name)) %>% 
+  select(-Loan_Seq_Number, -MSA, -Seller_Name, - Credit_score, -Lender_Type, -Fintech,
+         -O_DebtToIncome, -O_LoanToValue ) %>% 
+  group_by(Reporting_Period) %>% 
+  summarise(across(Delinquency_Status:Time_to_Maturity, ~mean(., na.rm = T))) %>% 
+  cor(use = "complete.obs")
+
+test[,1]
+```
+
+
 \newpage
 
 #### 11. Comment the bivariate graphs with linear, quadratic and Lowess fit for dependent and key explanatory variable (aid/gdp and growth of gdp): Within transformed, Between transformed.
 
+```{r}
+plot_biv <- function(data, x, y) {
+  
+  data %>% 
+    ggplot(aes(x = {{ x }}, y = {{ y }})) +
+    geom_point(size = 1, alpha = 0.1) +
+    geom_smooth(method = lm, se = FALSE, color = 'blue', size = 0.7) +
+    geom_smooth(method = loess, se = FALSE, color = 'red', size = 0.7) +
+    geom_smooth(method = lm, formula = y ~ splines::bs(x, 3), se = FALSE, color = 'orange', size = 0.7)
+  
+}
+```
+
+
+```{r}
+# Very slow ...
+within_transformation_graph[c(1:100000),] %>% 
+  filter(Current_UPB > -15000) %>% 
+  drop_na(confirmed, Current_UPB) %>% 
+  plot_biv(x = confirmed, y = Current_UPB)
+```
 
 \newpage
 
 
 #### 12. Comment the results of estimations of Between, Within (fixed effects, (fe)) and Mundlak (random effects (re) including all X(i.) as regressors), two-way fixed effects (add year dummies in fe regression) and First differences, including all explanatory variables except the ones with high near-multicollinearity in their respective between or within space.
 
+
+
+```{r}
+# Some FE model au piff
+# les FE sont apres le |
+res_fe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number , 
+               DB_KJ, panel.id = ~Loan_Seq_Number+Reporting_Period)
+
+res_hfe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period, 
+                DB_KJ, panel.id = ~Loan_Seq_Number+Reporting_Period)
+
+res_Hfe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period + MSA, 
+                DB_KJ, panel.id = ~Loan_Seq_Number+Reporting_Period)
+
+res_HFE = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period + MSA + Seller_Name, 
+                DB_KJ, panel.id = ~Loan_Seq_Number+Reporting_Period)
+
+etable(res_fe, res_hfe, res_Hfe, res_HFE, cluster = c('Loan_Seq_Number', 'Reporting_Period'))
+       #postprocess.df = pandoc.table.return, style = 'rmarkdown')
+
+#modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log")
+```
+
+```{r}
+reg_between <- plm(Delinquency_Status ~ Current_Interest_Rate, 
+                    data = DB_KJ,
+                    index = c("Loan_Seq_Number", "Reporting_Period"), 
+                    model = "between") 
+
+summary(reg_between)
+```
+
+
+```{r}
+#Fixed Effects (within) and Random Effects (random)
+plmwithin <- plm(Delinquency_Status~Current_Interest_Rate, 
+                 data = DB_KJ, model = "within")
+
+plmrandom <- plm(Delinquency_Status~Current_Interest_Rate,  
+                 data = DB_KJ, model = "random")
+
+plmfd <- plm(Delinquency_Status~Current_Interest_Rate,  
+                 data = DB_KJ, model = "fd")
+```
+
+
+```{r}
+summary(plmwithin)
+```
+
+
+```{r}
+summary(plmrandom)
+```
+
+```{r}
+summary(plmfd)
+```
+
+
 \newpage
 
 #### 13. If one of your variable is time-invariant z(i) (Institutional quality ICRG for Burnside Dollar), run a baseline Hausman Taylor estimation including all X(i.) as instruments. Comment the results.
+
+```{r}
+kable(tidy(phtest(plmwithin, reg_between)), caption=
+ "Hausman endogeneity test for the random effects wage model")
+```
+
+shows a low  p -value of the test, which indicates that the null hypothesis saying that the individual random effects are exogenous is rejected, which makes the random effects equation inconsistent. In this case the fixed effects model is the correct solution.
 
 \newpage
 
@@ -671,6 +779,8 @@ between_transformation %>%
 ```
 The most striking characteristic in the 'within-transformed' case is the apparent normality of the corruption variable and the 'ODA / GDP per capita' variable. Although those charts give no precisions about the kurtosis of those within-transformed variable, we can at least conclude that those variables are evenly-distributed around the mean. 
 
+
+
 ```{r}
 # Within transformation
 panel_data %>% 
@@ -731,18 +841,17 @@ within_bivariate <- panel_data %>%
 
 
 ```{r}
-fatal_btw_mod <- plm(corruption ~ gdp_per_cap, 
-                    data = within_bivariate,
-                    index = c("country", "year"), 
-                    model = "within")
-
-summary(fatal_btw_mod)
-```
-
-```{r}
 within_bivariate %>% lm(corruption ~ -1 + gdp_per_cap, data = .)
 ```
 
+
+```{r}
+plm(corruption ~ gdp_per_cap, 
+                    data = panel_data,
+                    index = c("country", "year"), 
+                    model = "within") %>% 
+  summary()
+```
 
 
 
@@ -793,27 +902,49 @@ kable_styling(latex_options = c("striped", "hold_position"))
 \newpage
 
 
-```{r}
-fatal_fe_mod <- plm(corruption ~ gdp_per_cap, 
-                    data = panel_data,
-                    index = c("iso2c", "year"), 
-                    model = "between")
 
-summary(fatal_fe_mod)
-```
-
-```{r}
-between_transformation %>% lm(corruption ~ gdp_per_cap, data = .)
-```
 #### 8. Run a one-way fixed effect foreign aid regression on ODA/GDP function of Ln(Population) and Ln(GDP/head). Comment.
+
+```{r}
+res_fe = feols(oda_gni ~  log(population) + log(gdp_per_cap) | country , 
+               panel_data, panel.id = ~country+year)
+
+res_hfe = feols(oda_gni ~  log(population) + log(gdp_per_cap) | country + year, 
+                panel_data, panel.id = ~country+year)
+
+#etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
+modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log")
+```
 
 \newpage
 
 #### 9. Run a one-way fixed effect of Corruption Index function of Ln(GDP/head), of ODA/GDP and the growth of ODA. Comment.
 
+```{r}
+res_fe = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country , 
+               panel_data, panel.id = ~country+year)
+
+res_hfe = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country + year, 
+                panel_data, panel.id = ~country+year)
+
+#etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
+modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log")
+```
+
 \newpage
 
 #### 10. Run a one-way fixed effect with the growth of GDP/head function of Ln(GDP/head), ODA/GDP, the growth of ODA and the Corruption index.
+
+```{r}
+res_fe = feols(g_gdp_per_cap ~  oda_gni + log(gdp_per_cap) + g_oda_net + corruption| country , 
+               panel_data, panel.id = ~country+year)
+
+res_hfe = feols(g_gdp_per_cap ~  oda_gni + log(gdp_per_cap) + g_oda_net + corruption | country + year, 
+                panel_data, panel.id = ~country+year)
+
+#etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
+modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log")
+```
 
 \newpage
 
@@ -823,24 +954,5 @@ between_transformation %>% lm(corruption ~ gdp_per_cap, data = .)
 
 #### 12. Compute the between and within transformations of the 11 variables over the full period. Provide histograms for ODA/GPD, growth of ODA, growth of GDP/head for both between and within transformed. Comment.
 
-```{r eval=FALSE, include=FALSE}
-fe_model_plm <- plm(inv ~ capital, data = Grunfeld, 
-                    index = c("firm", "year"), 
-                    effect = "individual", model = "within")
 
-summary(fe_model_plm)
-```
-
-
-```{r}
-panel_data %>%
-  ggplot(aes(x = year, y = gdp_ppp)) +
-  geom_point() +
-  geom_line(data = panel_data %>% group_by(year) %>% summarise(gdp_mean = mean(gdp_ppp)),
-            aes(x = year, y = gdp_mean), col = "blue") +
-  scale_x_continuous(labels = as.character(unique(panel_data$year)), 
-                     breaks = unique(panel_data$year)) +
-  labs(x = "Year", y = "GDP Per capita") +
-  theme(axis.text.x = element_text(angle = 90))
-```
 
