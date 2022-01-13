@@ -72,6 +72,8 @@ library(DBI)
 library(DataExplorer)
 library(patchwork)
 library(pander)
+library(moments)
+library(PerformanceAnalytics)
 ```
 
 ```{r}
@@ -239,6 +241,7 @@ None of our loan performance data display discontinuities between observations.
 
 #### 4. Compute between transformed and within transformed variables for all variables. Present a table with the within, between and pooled variance for each variable. Compute the share of between and within variance in the total variance for each variable. Comment these results.
 
+The pooled, within and between variance is defined as below: 
 
 - Pooled deviation = $x_{i,t} - \overline{x}$
 - Within deviation = $x_{i, t} - \overline{x}_i$
@@ -270,6 +273,7 @@ between_transformation <- DB_test %>%
   pivot_longer(c(Delinquency_Status:Fintech), names_to = 'variable', values_to = 'Between')
 ```
 
+The below table decomposes the total (pooled) deviation into a Within and Between part.  
 
 ```{r}
 pooled %>% 
@@ -279,7 +283,11 @@ pooled %>%
 kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
+We can firstly single out the variances of the variables "Confirmed" (which captures the confirmed COVID-19 cases by MSA) and Current_UPB", as they have a significantly greater magnitude. On the other extreme of the spectrum, variables such as the "Delinquency status", the "Zero Balance Code" display among the lowest variances. Those variables have both non-zero within and between variance. 
 
+On the other hand, the variables "Credit Score", "Current Interest Rate", "Original Debt to Income" and "Original Loan to Value", "Lender type" and "Fintech" do not vary over time, as they are characteristics defined at the origination of the loan. The therefore have no Within variance. 
+
+Confirmed COVID cases therefore supply most of the variance, followed by the current UPB, time to maturity and credit score. 
 
 
 \newpage
@@ -288,10 +296,9 @@ kable_styling(latex_options = c("striped", "hold_position"))
 #### 5. Plot the distribution of the within and between transformed dependent variable and of you key (preferred) explanatory variable (not all the explanatory variable) [in Burnside and Dollar: GDP growth and foreign aid EDA/GDP], using on the same graph an histogram, a normal law with same empirical mean and standard error and a kernel continuous approximation. Comment the between and within difference for each variable, and compare within/within for dependent and explanatory variable, and between/between for dependent and explanatory variable: kurtosis, skewness, non-normality, high leverage observation (far from the mean), several modes (mixture of distribution)?
 
 
-Definitions of between and within transformation: XXX
+We carried out the calculation of within and between transformations for all variables except the binary variables - namely the lender type - as it would not deliver any useful information. We therefore plot the distribution of the Within and Between transformed variables for the "Delinquency status" dependent variable - which is a categorical variable - and one chosen explanatory variable, "Confirmed COVID cases" - which is continuous.
 
-We carry out the calculation of within and between transformations for all variables except the binary variables - namely the lender type - because XXX. 
-
+We chose to plot them on separate charts for better visual representation, to facilitate comparison.  
 
 ```{r}
 within_transformation_graph <- DB_test %>% 
@@ -350,18 +357,51 @@ within_plot + between_plot
 }
 ```
 
+5.1. Between and Within transformation of the independent variable (confirmed COVID cases): 
 
 ```{r fig.height = 7, fig.width = 12}
 within_between_plot(confirmed, adjust = 10) & theme_bw()
 ```
 
+The most striking feature is the non-normality of the "Confirmed COVID cases" variable in the Between transformation case. A particularly striking point in the "Between" case is that the histogram and line are clearly skewed towards the right, owing to the presence of outliers (extremely large values at x = 30,000,000). We note that the greatest density is around x=0 in both the Within and Between cases. The striking point of the "Within" case is the leptokurtic normal distribution, with a relatively thicker right tail.   
+
+5.2. Between and Within transformation of the dependent variable (Delinquency Status): 
+
 ```{r fig.height = 8, fig.width = 14}
-within_between_plot(E_LoanToValue, adjust = 10)  & theme_bw()
+within_between_plot(Delinquency_Status, adjust = 10)  & theme_bw()
 ```
 
+The Within and Between histograms of the "Delinquency status" variable are notably more contrasted, owing to the categorical nature of this variable. Both charts are strongly centered around x=0. 
+The Within transformed variable displays a normal and strongly leptokurtic distribution. The kernel tails, while flattening, are still visible, owing to the presence of outliers. Those outliers are clearly visible in the Between transformation case, which is skewed to the right.   
+
+```{r include=FALSE}
+Moments_stats <- function(data, col, title) {
+  
+  data %>% 
+  select({{ col }}) %>% 
+  summarise(skewness = skewness( {{ col }}, na.rm = T),
+            kurtosis = kurtosis( {{ col }}, na.rm = T)) %>% 
+    pivot_longer(skewness:kurtosis, names_to = ' ', values_to = title)
+  }
+```
+
+```{r}
+Moments_stats(within_transformation_graph, confirmed, 'Confirmed Within') %>% 
+  left_join( Moments_stats(between_transformation_graph, confirmed, 'Confirmed Between'), by =' ') %>%
+  left_join( Moments_stats(within_transformation_graph, Delinquency_Status, 'Delinquency_Status Within'), by =' ') %>%
+  left_join( Moments_stats(between_transformation_graph, Delinquency_Status, 'Delinquency_Status Between'), by =' ') %>% 
+  kable() %>%
+kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+We compare the above skewness and kurtosis coefficients to those of a Normal distribution, which are respectively of 0 and 3. 
+
+While the skewness coefficients are somewhat close to those of a normal distribution for both within-transformed variable, it is not the case for the between-transformed variables, which are markedly above 0 - as expected visually. 
+
+The Kurtosis coefficients confirm that the within and between distributions for both variables are strongly leptokurtic, especially in the case of the Delinquency status variable.  
 
 
-
+#ADD HERE A WORD ON OUTLIERS AND NON-NORMALITY
 
 
 #### 6. Plot boxplot of within distribution and between distribution for the dependent variable and the key explanatory variables. Comment that you find the same insights from question 5.
@@ -382,12 +422,15 @@ boxplot_plot <- function(data, col, x_title) {
 
 ```{r}
 boxplot_plot(within_transformation_graph, confirmed, 'Confirmed within') +
-  boxplot_plot(within_transformation_graph, E_LoanToValue, 'E_LoanToValue within') +
+  boxplot_plot(within_transformation_graph, Delinquency_Status, 'Delinquency_Status within') +
   boxplot_plot(between_transformation_graph, confirmed, 'Confirmed between') +
-  boxplot_plot(between_transformation_graph, E_LoanToValue, 'E_LoanToValue between') +
+  boxplot_plot(between_transformation_graph, Delinquency_Status, 'Delinquency_Status between') +
   plot_layout(ncol = 4)
 ```
-
+The result of the above boxplot confirms the intuitions derived from the graphs of question 5. 
+Firstly, both variables - both in the within and between transformation case - are centered around 0. 
+Secondly, in the Within-transformed case of both variables, we notice the low interquartile range, which matches their leptokurtic shapes in question 5. The above chart also confirms the presence of tails on both sides on the mean, with relatively more outliers above the mean in the case of the "Confirmed COVID cases" variable.
+Finally, turning to the Between-transformed case, the above chart confirms the significantly greater interquartile range for the "Confirmed COVID cases" variable and the presence extreme outliers. It also confirms the very small dispersion of the Between-transformed "Delinquency status" variable. 
 
 
 \newpage
@@ -416,12 +459,16 @@ univ_stats <- function(data, col, title) {
 ```{r}
 univ_stats(within_transformation_graph, confirmed, 'Confirmed Within') %>% 
   left_join( univ_stats(between_transformation_graph, confirmed, 'Confirmed Between'), by =' ') %>%
-  left_join( univ_stats(within_transformation_graph, E_LoanToValue, 'E_LoanToValue Within'), by =' ') %>%
-  left_join( univ_stats(between_transformation_graph, E_LoanToValue, 'E_LoanToValue Between'), by =' ') %>% 
+  left_join( univ_stats(within_transformation_graph, Delinquency_Status, 'Delinquency_Status Within'), by =' ') %>%
+  left_join( univ_stats(between_transformation_graph, Delinquency_Status, 'Delinquency_Status Between'), by =' ') %>% 
   kable() %>%
 kable_styling(latex_options = c("striped", "hold_position"))
 ```
+The above table confirms the intuitions we derived from the charts and tables in question 5. 
 
+We firstly notice a very significant difference between the mean and the median of the "Confirmed COVID cases" variables, both in the Within and Between transformed case. This result matches the large kurtosis of this distribution that we identified in question 5. In the "Within" case, while the distribution is centered around 0, we note that the median is negative: this result is in part driven by the presence of outliers that we highlighted in question 6.   
+
+Secondly, turning to the variable "Delinquency status", the very high kurtosis that we identified in question 5 (of 19 and 25 for respectively the Within and the Between cases) is not reflected in the median (of 0.0). This statement is especially true in the "within" case. This is because the negative and positive outliers offset eachother, thereby resulting in a median of 0.    
 
 
 \newpage
@@ -436,26 +483,68 @@ random_20_indiv <- within_transformation_graph %>%
 
 within_transformation_graph %>% 
   filter(Loan_Seq_Number %in% random_20_indiv) %>% 
-  ggplot(aes(x = reorder(Loan_Seq_Number, Current_UPB), y = Current_UPB)) +
+  ggplot(aes(x = reorder(Loan_Seq_Number, Delinquency_Status), y = Delinquency_Status)) +
   geom_boxplot() +
   coord_flip()
 ```
 
+This graphical representation unfortunately cannot provide useful insights for our dependent variable, as it is a categorical variable which takes on the value of 0 for most loans. 
+
+Nonetheless, we can infer more conclusions from the dependent variables' charts. 
+
+```{r}
+random_20_indiv <- within_transformation_graph %>% 
+  distinct(Loan_Seq_Number) %>% 
+  slice_sample(n = 20) %>% 
+  pull()
+
+within_transformation_graph %>% 
+  filter(Loan_Seq_Number %in% random_20_indiv) %>% 
+  ggplot(aes(x = reorder(Loan_Seq_Number, E_LoanToValue), y = E_LoanToValue)) +
+  geom_boxplot() +
+  coord_flip()
+```
+
+Means around 0. Very heterogeneous standard errors and interquartile ranges. 
+
+```{r}
+random_20_indiv <- within_transformation_graph %>% 
+  distinct(Loan_Seq_Number) %>% 
+  slice_sample(n = 20) %>% 
+  pull()
+
+within_transformation_graph %>% 
+  filter(Loan_Seq_Number %in% random_20_indiv) %>% 
+  ggplot(aes(x = reorder(Loan_Seq_Number, confirmed), y = confirmed)) +
+  geom_boxplot() +
+  coord_flip()
+```
+
+Means precisely at 0. Very heterogeneous standard errors and interquartile ranges. 
+
 \newpage
 
 #### 9. Compare and comment the within and between transformed bivariate correlation matrix for all variables (include a time trend 1,2,.,T). Check poor simple correlation with the dependent variables and high correlation between explanatory variables.
+
+We exclude from the within variables bivariate correlation matrix the variables which are time-invariant (which therefore have 0 standard deviation). 
 
 ```{r}
 within_transformation_graph %>% 
   mutate(Reporting_Period = as.numeric(as.factor(Reporting_Period)),
          MSA = as.factor(MSA),
          Seller_Name = as.factor(Seller_Name)) %>% 
-  select(-Loan_Seq_Number, - MSA, -Seller_Name, - Credit_score, -Lender_Type, -Fintech,
-         -O_DebtToIncome, -O_LoanToValue ) %>% 
+  select(-Loan_Seq_Number, -Reporting_Period, - MSA, -O_DebtToIncome, -O_LoanToValue,-Lender_Type,-Fintech, -Credit_score) %>% 
 datasummary_correlation(title = 'Correlation matrix within', fmt = 3) %>%
 kable_styling(latex_options = c("striped", "hold_position")) %>%
 row_spec(0, angle = 90)
 ```
+
+As our dependent variable of interest is the "Delinquency status", we focus on the first column of this table. 
+
+Those results are surprising: the number of confirmed cases, the estimated loan to value ratio and the loan's time to maturity are inversely related to the delinquency status. As increases in those variables indicate a degradation in the loans' credit quality, we would have expected those variables to be positively correlated with the delinquency status. 
+Only interest rate has an expected positive sign - as a higher cost of debt can reasonably be associated with a more important loan delinquency.  
+
+A WORD ON PREPAYMENT.
 
 ```{r}
 between_transformation_graph %>% 
@@ -465,7 +554,12 @@ kable_styling(latex_options = c("striped", "hold_position", "scale_down")) %>%
 row_spec(0, angle = 90)
 ```
 
+Thanks to the presence of variance in more explanatory variables, we can identify many more interesting relationships with the "Delinquency status" variable. 
 
+Focusing again on the first column, the first striking point is that the correlation coefficients for nearly all variables take on an expected positive sign. Those above results indeed verify our working hypothesis that (i) confirmed COVID cases are positively related to the loan delinquency, similarly as (ii) interest rate, loan size, loan-to-value and debt-to-income. 
+Nonetheless, it remains surprising that the "Credit score" correlation coefficient is negative. Similarly, the positive coefficient for the "Lender type" variable is surprising, as it seems to indicate that the fact that the lender is a commercial bank is positively related to loan delinquency, compared to if it was a shadow bank. 
+
+A WORD ON PREPAYMENT.
 
 
 \newpage
