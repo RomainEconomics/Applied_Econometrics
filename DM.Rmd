@@ -96,6 +96,8 @@ DB %>%
 
 Khalil's Master thesis explores the topic of the performance of securitized mortgage loans in the US in the context of the coronavirus crisis. Based on issuance and performance data for more than 346,724 mortgage loans purchased by Freddie Mac in 2020Q1, combined with neighborhood-level coronavirus data, the thesis will examine, at the US local level, whether the coronavirus outbreak affected these loans' (i) delinquency status and (ii) prepayment. In parallel, the Master thesis also enquires whether the status of the lender that originated the loan - commercial bank or shadow bank, Fintech or not - has an influence on those two loan performance metrics. 
 
+In those datasets, data are available at the geographical level of the Metropolitan Statistical Area (or MSA). MSAs are defined as "a core area containing a substantial population nucleus (50,000+ inhabitants), together with adjacent communities having a high degree of economic and social integration with that core". The US counts 384 MSA across the country. 
+
 \newpage
 
 
@@ -104,7 +106,7 @@ Khalil's Master thesis explores the topic of the performance of securitized mort
 
 For each loan, the database records: 
 
-- (i) time-invariant issuance metrics. Those variables vary only  with respect to individuals (in other words by loan) and do not vary over. Those time-invariant variables regroup for instance borrower credit score at issuance, the original loan to value, XXX and the lender type. 
+- (i) time-invariant issuance metrics. Those variables vary only  with respect to individuals (in other words by loan) and do not vary over. Those time-invariant variables regroup for instance borrower credit score at issuance, the original loan to value, Original borrower debt-to-income and the lender type. 
 
 - (ii) time-varying performance metrics. Those variables vary both with respect to time and with respect to individuals. For instance, prepayment (Zero Balance Code), Delinquency status, and unpaid principal. 
 
@@ -402,9 +404,6 @@ While the skewness coefficients are somewhat close to those of a normal distribu
 The Kurtosis coefficients confirm that the within and between distributions for both variables are strongly leptokurtic, especially in the case of the Delinquency status variable.  
 
 
-#ADD HERE A WORD ON OUTLIERS AND NON-NORMALITY
-
-
 #### 6. Plot boxplot of within distribution and between distribution for the dependent variable and the key explanatory variables. Comment that you find the same insights from question 5.
 
 ```{r}
@@ -506,7 +505,7 @@ within_transformation_graph %>%
   coord_flip()
 ```
 
-Means around 0. Very heterogeneous standard errors and interquartile ranges. 
+The means are in overall centered around 0. Standard errors and interquartile ranges are very heterogeneous across different loans. 
 
 ```{r}
 random_20_indiv <- within_transformation_graph %>% 
@@ -521,7 +520,7 @@ within_transformation_graph %>%
   coord_flip()
 ```
 
-Means precisely at 0. Very heterogeneous standard errors and interquartile ranges. 
+Means precisely centered around 0. Standard errors and interquartile ranges are very heterogeneous across loans. 
 
 \newpage
 
@@ -545,7 +544,6 @@ As our dependent variable of interest is the "Delinquency status", we focus on t
 Those results are surprising: the number of confirmed cases, the estimated loan to value ratio and the loan's time to maturity are inversely related to the delinquency status. As increases in those variables indicate a degradation in the loans' credit quality, we would have expected those variables to be positively correlated with the delinquency status. 
 Only interest rate has an expected positive sign - as a higher cost of debt can reasonably be associated with a more important loan delinquency.  
 
-A WORD ON PREPAYMENT.
 
 ```{r}
 between_transformation_graph %>% 
@@ -559,9 +557,6 @@ Thanks to the presence of variance in more explanatory variables, we can identif
 
 Focusing again on the first column, the first striking point is that the correlation coefficients for nearly all variables take on an expected positive sign. Those above results indeed verify our working hypothesis that (i) confirmed COVID cases are positively related to the loan delinquency, similarly as (ii) interest rate, loan size, loan-to-value and debt-to-income. 
 Nonetheless, it remains surprising that the "Credit score" correlation coefficient is negative. Similarly, the positive coefficient for the "Lender type" variable is surprising, as it seems to indicate that the fact that the lender is a commercial bank is positively related to loan delinquency, compared to if it was a shadow bank. 
-
-A WORD ON PREPAYMENT.
-
 
 \newpage
 
@@ -625,7 +620,7 @@ test[,1]
 ```
 The above table suggests that the the within-transformed COVID confirmed cases, current loan interest rate, unpaid principal balance and estimated loan-to-value ratio display strong time trends.
 
-# SEE IF WE CAN ADD P-VALUES FOR THOSE COEFFS
+######################### SEE IF WE CAN ADD P-VALUES FOR THOSE COEFFS #########################
 
 \newpage
 
@@ -669,7 +664,42 @@ To estimate the strength of those relationship, we turn to a Linear Probability 
 
 #### 12. Comment the results of estimations of Between, Within (fixed effects, (fe)) and Mundlak (random effects (re) including all X(i.) as regressors), two-way fixed effects (add year dummies in fe regression) and First differences, including all explanatory variables except the ones with high near-multicollinearity in their respective between or within space.
 
-WE WILL USE AN LPM
+
+12.1. Linear Probability Models (LPM) on between-transformed variables. 
+
+We run a between Linear Probability Model (LPM) regression of the loans' delinquency status on (i) the COVID-19 confirmed cases, (ii) the borrower's estimate loan-to-value and (iii) the loan's current interest rate.  
+
+```{r}
+reg_between <- plm(Delinquency_Status ~ confirmed+E_LoanToValue+Current_Interest_Rate, 
+                    data = DB_KJ,
+                    index = c("Loan_Seq_Number", "Reporting_Period"), 
+                    model = "between") 
+
+summary(reg_between)
+```
+Although all the regressors are statistically significant, the extremely small size of the regressors suggests the weak power of those variables to account for variability in the Delinquency status variable. 
+We suspect that this is due to the significant imbalance in the dependent variable's distribution, as we have only 127,000 observations of significant loan delinquency against more than 4,700,000 observations of non-delinquency. This explains the very low R-squared of this regression. 
+
+As this homework exercise is an opportunity for us to explore this Freddie Mac loan performance dataset, we run a Linear Probability Model (LPM) with other variables, in order to answer a different question: "During the first periods of the COVID-19 crisis, did shadow banks, especially fintechs, serve riskier borrowers?"
+Based on Wang (2020), we run the following regression: 
+
+```{r}
+reg_between_2 <- plm(Fintech ~ E_LoanToValue+Credit_score+E_LoanToValue*Credit_score+Current_Interest_Rate, 
+                    data = DB_KJ,
+                    index = c("Loan_Seq_Number", "Reporting_Period"), 
+                    model = "between") 
+
+summary(reg_between_2)
+```
+
+As in Wang (2020), the R-squared is very low. Consistently with the intuition from the literature and to Wang (2020), the lower the credit score at origination, the more likely the loan is to have been originated by a Fintech lender. The above coefficients can be interpreted the following way: a 1 unit decrease in borrower's FICO score raises the probability of the loan being originated by a Fintech of 0.084%. Turning to the interpretation of the loan-to-value ratio coefficient: a 1% decrease in the borrower LTV ratio raises the probability that the loan was originated by a Fintech lender. 
+Those results suggest that Fintech lenders, while targeting borrowers with lower credit scores, might compensate the risk by requiring a lower LTV ratio (in other words, higher collateral). 
+
+
+12.2. Linear Probability Models (LPM) on within-transformed variables.
+
+
+####################### SHALL WE KEEP THE BELOW CHUNK? ##########################
 
 ```{r}
 # Some FE model au piff
@@ -692,65 +722,103 @@ etable(res_fe, res_hfe, res_Hfe, res_HFE, cluster = c('Loan_Seq_Number', 'Report
 #modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log")
 ```
 
+
+
+
+
+
+For the coming regressions, we will focus on the first relationship, on the drivers of mortgage loan delinquency, as unfortunately, running the Linear Probability Models for predicting the probability of Fintech lending on the different variables transformations is computationally very heavy.   
+
+
+We now run within fixed effects, random fixed effects and first-difference estimations, starting by our first relationship of interest, between COVID cases at the MSA level and loan delinquency status. 
+
 ```{r}
-reg_between <- plm(Delinquency_Status ~ Current_Interest_Rate, 
-                    data = DB_KJ,
-                    index = c("Loan_Seq_Number", "Reporting_Period"), 
-                    model = "between") 
-
-summary(reg_between)
-```
-
-
-```{r}
-#Fixed Effects (within) and Random Effects (random)
-plmwithin <- plm(Delinquency_Status~Current_Interest_Rate, 
+#Loan delinquency and local COVID cases: Fixed Effects (within) and Random Effects (random)
+plmwithin <- plm(Delinquency_Status~confirmed+E_LoanToValue, 
                  data = DB_KJ, model = "within")
 
-plmrandom <- plm(Delinquency_Status~Current_Interest_Rate,  
+plmrandom <- plm(Delinquency_Status~confirmed+E_LoanToValue,  
                  data = DB_KJ, model = "random")
 
-plmfd <- plm(Delinquency_Status~Current_Interest_Rate,  
+plmfd <- plm(Delinquency_Status~confirmed+E_LoanToValue,  
                  data = DB_KJ, model = "fd")
 ```
 
+The fixed effect estimation controls for MSA-level characteristics thanks to the inclusion of MSA fixed effects. While the MSA fixed effects avoid the risk of omitted variable bias - as it controls for time-invariant factors that vary across MSA.
 
 ```{r}
 summary(plmwithin)
 ```
 
+12.3. Random effect estimation
 
 ```{r}
 summary(plmrandom)
 ```
+12.4. First difference estimation
 
 ```{r}
 summary(plmfd)
 ```
+
+One conclusion can be drawn of the above results: while the variable of confirmed COVID cases and for the estimated loan-to-value are significant at the 1% level, the R-squared and the correlation coefficients are extremely low.  
+Those results corroborate the findings of the between estimation: those two variables therefore do not seem to capture much variability in the Delinquency status data, due to the strong imbalance between delinquent and non-delinquent loans.   
+
+Finally, to check the existence of individual fixed effects, we run a Hausman test, comparing the results of the Between and Within Estimators.
+
+
+12.5. Hausman endogeneity test
+
+```{r}
+kable(tidy(phtest(plmrandom, plmwithin)), caption=
+ "Hausman endogeneity test for the random effects wage model")
+```
+
+The above output shows a low  p -value of the test, which indicates that the null hypothesis - stating that the individual random effects are exogenous - is rejected. The random effects estimation is therefore inconsistent. The fixed effects model is therefore the correct specification.
 
 
 \newpage
 
 #### 13. If one of your variable is time-invariant z(i) (Institutional quality ICRG for Burnside Dollar), run a baseline Hausman Taylor estimation including all X(i.) as instruments. Comment the results.
 
-WE WILL USE AN LPM
+The effect of any time-invariant variable (such as the credit score) is eliminated through the "de-meaning transformation" of the variables. We therefore need to find a way to estimate the coefficients of "Confirmed" and "Estimated Loan-to-Value" without including fixed effects, while dealing with correlations with the error term, owing to ommitted variable bias. 
+The Hausmann-Taylor approach will therefore be useful for this purpose: it allows us to account for panel data biases and still estimate our panel data coefficients - which cannot be done in a standard fixed effect approach. 
+
+For conducting the Hausman-Taylor estimation, the R software does all the calculations for deciding which variable will be instrumented by a de-meaned instrumental variable and which variables will be employed in random effects.
+
+The results are reported in the below table. 
 
 ```{r}
-kable(tidy(phtest(plmwithin, reg_between)), caption=
- "Hausman endogeneity test for the random effects wage model")
+pht <- plm(Delinquency_Status ~ confirmed + E_LoanToValue + Credit_score + Current_Interest_Rate | confirmed + E_LoanToValue + Current_Interest_Rate,
+          data=DB_KJ,model="random",random.method = "ht", inst.method = "baltagi")
+summary(pht)
+
 ```
 
-shows a low  p -value of the test, which indicates that the null hypothesis saying that the individual random effects are exogenous is rejected, which makes the random effects equation inconsistent. In this case the fixed effects model is the correct solution.
+We now end up with theoretically unbiased estimations of those panel marginal effects. The results are quite comparable to the other specifications: all variables are significant to the 1% level. Nonetheless, the R-squared is extremely low. 
 
 \newpage
 
 #### 14. If one of your variable is time-invariant z(i) (Institutional quality ICRG for Burnside Dollar), run a between regression on z(i) explained by X(i.) and other time invariant variable (only with N observations). If the R2 is low, this may signal X(i.) are weak instruments poorly correlated with the variable z(i) to be instrumented. Comment.
 
-WE WILL USE AN LPM
+To conclude, we verify the strength of our instruments by examining their correlation with our time-invariant variable "Credit score". 
+
+```{r}
+reg_between_Zi_Xi <- plm(Credit_score ~ E_LoanToValue+confirmed+Current_Interest_Rate, 
+                    data = DB_KJ,
+                    index = c("Loan_Seq_Number", "Reporting_Period"), 
+                    model = "between") 
+
+summary(reg_between_Zi_Xi)
+```
+
+Although each explanatory variable is significant at the 1% level, the reported R-squared is low (11%). Those results suggest the relative weakness of our the estimated Loan-to-Value ratio, the Confirmed COVID cases and Current interest rates variables for instrumenting the time-invariant variable Credit score. 
+
 
 \newpage
 
 #### 15. Optional: mention or propose improvements to the Python, STATA, SAS or R code (copy it here). Optional: propose improvements, additional insights, and you do not know how to code them.
+
 
 \newpage
 
