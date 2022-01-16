@@ -44,7 +44,7 @@ header-includes:
 ```
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, 
+knitr::opts_chunk$set(echo = FALSE, 
                       message=FALSE, 
                       warning=FALSE,  
                       results = "hold",
@@ -77,7 +77,7 @@ library(PerformanceAnalytics)
 library(psych)  
 ```
 
-```{r}
+```{r echo=TRUE}
 con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
 DB = tbl(con, "DB")
 
@@ -164,7 +164,8 @@ DB %>%
   rename(Number_Periods_available = n,
          Number_of_loans = nn) %>% 
   mutate(cum = cumsum(Number_of_loans),
-         percent = 100 * (cum / 346724))
+         percent = 100 * (cum / 346724)) %>% 
+  collect()
 ```
 
 
@@ -193,7 +194,8 @@ DB_KJ <- DB_temp %>%
          O_DebtToIncome, O_LoanToValue, Time_to_Maturity, Lender_Type, Fintech, MSA, Seller_Name) %>% 
   mutate(Delinquency_Status = as.integer(Delinquency_Status)) %>% 
   collect() %>% 
-  mutate_if(is.integer, as.double)
+  mutate_if(is.integer, as.double) %>% 
+  lazy_dt()
 ```
 
 
@@ -249,7 +251,7 @@ The pooled, within and between variance is defined as below:
 - Between deviation = $\overline{x}_{i} - \overline{x}$
 
 ```{r}
-pooled <- DB_test %>% 
+pooled <- DB_KJ %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
   summarise(across(c(Delinquency_Status:Fintech), ~var(., na.rm = T))) %>% 
   pivot_longer(c(Delinquency_Status:Fintech), names_to = 'variable', values_to = 'Pooled')
@@ -257,7 +259,7 @@ pooled <- DB_test %>%
 
 ```{r}
 # Within transformation
-within_transformation <- DB_test %>% 
+within_transformation <- DB_KJ %>% 
   group_by(Loan_Seq_Number) %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
   ungroup() %>% 
@@ -266,7 +268,7 @@ within_transformation <- DB_test %>%
 ```
 
 ```{r}
-between_transformation <- DB_test %>% 
+between_transformation <- DB_KJ %>% 
   group_by(Loan_Seq_Number) %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~  mean(., na.rm = T)) %>% 
   ungroup() %>% 
@@ -302,15 +304,17 @@ We carried out the calculation of within and between transformations for all var
 We chose to plot them on separate charts for better visual representation, to facilitate comparison.  
 
 ```{r}
-within_transformation_graph <- DB_test %>% 
+within_transformation_graph <- DB_KJ %>% 
   group_by(Loan_Seq_Number) %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
-  ungroup() 
+  ungroup() %>% 
+  collect()
 
-between_transformation_graph <- DB_test %>% 
+between_transformation_graph <- DB_KJ %>% 
   group_by(Loan_Seq_Number) %>% 
   summarise_at(vars(Delinquency_Status:Fintech), ~  mean(., na.rm = T)) %>% 
-  ungroup() 
+  ungroup() %>% 
+  collect()
 ```
 
 
@@ -360,7 +364,7 @@ within_plot + between_plot
 
 5.1. Between and Within transformation of the independent variable (confirmed COVID cases): 
 
-```{r fig.height = 7, fig.width = 12}
+```{r echo=TRUE, fig.height=7, fig.width=}
 within_between_plot(confirmed, adjust = 10) & theme_bw()
 ```
 
@@ -368,7 +372,7 @@ The most striking feature is the non-normality of the "Confirmed COVID cases" va
 
 5.2. Between and Within transformation of the dependent variable (Delinquency Status): 
 
-```{r fig.height = 8, fig.width = 14}
+```{r echo=FALSE, fig.height=8, fig.width=}
 within_between_plot(Delinquency_Status, adjust = 10)  & theme_bw()
 ```
 
@@ -672,25 +676,49 @@ To estimate the strength of those relationship, we turn to a Linear Probability 
 WE WILL USE AN LPM
 
 ```{r}
-# Some FE model au piff
-# les FE sont apres le |
+DB_reg <- DB_KJ %>% collect()
+DB_reg %>% count(Delinquency_Status)
+
+
 res_fe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number , 
-               DB_KJ, panel.id = ~Loan_Seq_Number+Reporting_Period)
+               DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
 
 res_hfe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period, 
-                DB_KJ, panel.id = ~Loan_Seq_Number+Reporting_Period)
+                DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
 
 res_Hfe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period + MSA, 
-                DB_KJ, panel.id = ~Loan_Seq_Number+Reporting_Period)
+                DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
 
 res_HFE = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period + MSA + Seller_Name, 
-                DB_KJ, panel.id = ~Loan_Seq_Number+Reporting_Period)
+                DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
 
 etable(res_fe, res_hfe, res_Hfe, res_HFE, cluster = c('Loan_Seq_Number', 'Reporting_Period'))
        #postprocess.df = pandoc.table.return, style = 'rmarkdown')
 
 #modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log")
 ```
+
+
+
+```{r}
+res_fe2 = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + MSA[confirmed] , 
+               DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
+
+res_fe3 = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number[Current_UPB] + MSA , 
+               DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
+
+etable(res_fe2, res_fe3)
+```
+
+```{r}
+res_multi = feols(c(Delinquency_Status) ~ Current_Interest_Rate  | sw(Reporting_Period, Lender_Type),
+                  DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period, fsplit = ~Lender_Type)
+summary(res_multi, "compact")
+
+```
+
+
+
 
 ```{r}
 reg_between <- plm(Delinquency_Status ~ Current_Interest_Rate, 
@@ -845,7 +873,8 @@ Period_1 %>%
   summarise(across(where(is.double), ~mean(., na.rm = T))) %>% # across() applies a function (here the mean) given a condition (is.double)
   arrange(desc(oda_net_gdp_cap)) %>% 
   relocate(country, oda_net_gdp_cap) %>% 
-  slice_max(oda_net_gdp_cap, n = 10)
+  slice_max(oda_net_gdp_cap, n = 10) %>% 
+  mutate_if(is.numeric, ~round(., 3))
 ```
 
 ```{r}
@@ -858,8 +887,8 @@ Period_2  %>%
   summarise(across(where(is.double), ~mean(., na.rm = T))) %>% # across() applies a function (here the mean) given a condition (is.double)
   arrange(desc(oda_net_gdp_cap)) %>% 
   relocate(country, oda_net_gdp_cap) %>% 
-  slice_max(oda_net_gdp_cap, n = 10)
-
+  slice_max(oda_net_gdp_cap, n = 10) %>% 
+  mutate_if(is.numeric, ~round(., 3))
 ```
 
 We notice that the 10 countries with the highest ODA/GDP average over the period differ between those two samples. While Malawi, Rwanda, Sierra Leone, Niger and the Central African Republic are top recipients in foreign aid / GDP on average for both periods 1 and 2, Burkina Faso, Cabo Verde and Tanzania have a lower relative to period 1 and are no more among the top 10 recipients in period 2. 
@@ -957,6 +986,7 @@ In the between case, a negative relationship between GDP per capita growth and (
 summary(between_transformation %>% lm(g_gdp_per_cap ~ -1 + g_oda_net, data = .))
 
 ```
+
 ```{r}
 summary(between_transformation %>% lm(g_gdp_per_cap ~ -1 + oda_net_gdp_cap, data = .))
 
@@ -990,21 +1020,7 @@ within_bivariate <- panel_data %>%
          # '..$' : $ pour selectionner les deux derniers charactères
          country_year = paste0(country, '-', str_extract_all(year, '..$'))) %>% 
   ungroup() %>% 
-  select(country_year, country, year, gdp_per_cap, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) 
-```
-
-
-```{r}
-within_bivariate %>% lm(corruption ~ -1 + gdp_per_cap, data = .)
-```
-
-
-```{r}
-plm(corruption ~ gdp_per_cap, 
-                    data = panel_data,
-                    index = c("country", "year"), 
-                    model = "within") %>% 
-  summary()
+  select(country_year, country, year, gdp_per_cap, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption, population) 
 ```
 
 
@@ -1043,7 +1059,7 @@ within_bivariate %>%
 
 The same conclusion can be drawn for this bivariate relationship in the linear case, which seems to fail to capture the variance of GDP per capita growth. While the quadratic and LOWESS specifications seem to perform slightly better, this is driven by the presence of outliers. 
 
-Finally, We plot the within bivariate graphs of the corruption index with ODA/GDP. Similarly to the previous case, the strong cluster around ODA/GDP = 0 signals the same orthogonality between those two variables, and the quadratic and LOWESS specifications seem to capture variance drivenby the outliers.   
+Finally, We plot the within bivariate graphs of the corruption index with ODA/GDP. Similarly to the previous case, the strong cluster around ODA/GDP = 0 signals the same orthogonality between those two variables, and the quadratic and LOWESS specifications seem to capture variance driven by the outliers.   
 
 ```{r}
 within_bivariate %>% 
@@ -1058,7 +1074,6 @@ within_bivariate %>%
 ```{r}
 between_transformation %>% 
   select(c(oda_net_gdp_cap, corruption, population, gdp_per_cap, g_gdp_per_cap, g_oda_net)) %>% 
-  #cor()%>% 
 datasummary_correlation(title = 'Correlation matrix') %>%
 kable_styling(latex_options = c("striped", "hold_position")) 
 ```
@@ -1067,9 +1082,18 @@ We also notice the interesting strong and positive sign of the correlation coeff
 
 We analyze the correlation matrix for the within case as well. We perform the two analyses separately: grouping the between and within transformed variables in one same correlation matrix would provide little information, as the between and within variables are orthogonal by essence.    
 
-ADD THE WITHIN CORRELATION MATRIX HERE. 
 
-COMMENT OF WITHIN CORR MATRIX: XXX
+```{r echo=FALSE}
+within_bivariate %>% 
+  select(-country_year, - country, -year) %>% 
+  relocate(oda_net_gdp_cap, corruption, population, gdp_per_cap, g_gdp_per_cap, g_oda_net) %>% 
+datasummary_correlation(title = 'Correlation matrix') %>%
+kable_styling(latex_options = c("striped", "hold_position")) 
+  
+```
+
+
+From the Within correlation matrix, we can observe that the correlation among our variables is much lower than in the case of the between correlation matrix. This confirms what we saw with the graphs in the previous question. Only three correlations are greater than 0,1. The highest correlation concerns the growth rate of ODA with ODA/GDP.
 
 
 \newpage
@@ -1085,17 +1109,15 @@ res_hfe = feols(oda_gni ~  log(population) + log(gdp_per_cap) | country + year,
                 panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log")
-
+modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log", stars = TRUE)
 ```
 The above regression confirms the results of the above Between-correlation matrix: the two variables "population" and "GDP per capita" are negatively correlation with the foreign aid variable. 
 The addition of year fixed effects improves only very slightly the high R-squared and adjusted R-squared (by less than 1 percentage point). 
 
-```{r}
-summary(res_fe)
-summary(res_hfe)
 
-```
+Je crois que le Fixed effect model est équivalent à une Within transformation, du coup je sais pas si on doit pas plutot comparer avec la Within correlation matrix. Mais apres du coup, la correlation était nulle ou presque, et maintenant on a R2 élevé et un paramètre significatif. Je sais pas si on devrait pas dire qu'il y a le risque d'avoir une Unit Root, comme on utilise le Log(pop) et Log(GDP/cap) et qu'il faudrait essayer un First difference model.
+
+
 The coefficients are highly significant, at the 1% level for most. Those findings are therefore consistents with the results of the descriptive statistics. 
 
 
@@ -1111,18 +1133,14 @@ res_hfe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country
                 panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_2, res_hfe_2), gof_omit = "Pseudo|IC|Log")
+modelsummary(list(res_fe_2, res_hfe_2), gof_omit = "Pseudo|IC|Log", stars = TRUE)
 ```
 
 As we noted in the descriptive statistics part of question 7, GDP per capita is positively correlated with the corruption variable, with a coefficient relatively larger in magnitude compared to the other two coefficients. The two foreign aid variables (as % of GDP and % growth) make nearly no contribution to the variance of the corruption index: the foreign aid growth variable is in fact not significant (as per the below table). Those results are therefore very much in line with the findings of the bivariate correlation matrix in question 7. 
 
+La aussi, je pense qu'on doit avoir un Unit Root, parce que un R2 de 0.9+, c'est suspect !
+
 We finally note that the inclusion of year fixed effect in model 2 does not add explanatory power to the model.  
-
-```{r}
-summary(res_fe_2)
-summary(res_hfe_2)
-
-```
 
 \newpage
 
@@ -1136,21 +1154,69 @@ res_hfe_3 = feols(g_gdp_per_cap ~  oda_gni + log(gdp_per_cap) + g_oda_net + corr
                 panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_3, res_hfe_3), gof_omit = "Pseudo|IC|Log")
+modelsummary(list(res_fe_3, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE)
 ```
 The above regression results suggest no meaningful statistical relationship between GDP/capita growth and the Log(GDP/capita), foreign aid/GDP, foreign aid growth and the Corruption index: coefficients are of small magnitude, especially compared to standard errors, and the goodness-of-fit metrics (R-squared and Adjusted R-squared) are low. 
 
-```{r}
-summary(res_fe_3)
-summary(res_hfe_3)
-
-```
 
 The above table further proves that none of the regressors is statistically significant, to the exception of the log(GDP per capita) in the country and year fixed effect regression, quite understandably. 
 
 \newpage
 
 #### 11. Propose an additional interesting estimation using this database.
+
+Should try First difference model
+
+```{r}
+res_multi = feols(c(corruption) ~ oda_gni + csw(log(gdp_per_cap), g_oda_net ) | sw0(country), 
+                  panel_data, panel.id = ~country+year, fsplit = ~country)
+
+summary(res_multi, "compact", se = "hetero")
+```
+
+
+```{r}
+res_fe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country , 
+               panel_data, panel.id = ~country+year)
+
+res_hfe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country + year, 
+                panel_data, panel.id = ~country+year)
+
+res_hfe_3 = feols(corruption ~  oda_gni + log(gdp_per_cap) + l(g_oda_net, 0:1) | country + year, 
+                panel_data, panel.id = ~country+year)
+
+#etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
+modelsummary(list(res_fe_2, res_hfe_2, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE)
+```
+
+We can also analyse our fixed effects and see which ones are the most impactful.
+
+```{r}
+plot(fixef(res_fe_2))
+```
+
+```{r}
+plot(fixef(res_hfe_2))
+```
+The year 2003 can be considered as an outlier ?
+
+
+```{r}
+# Varying slope, not working well
+res_hfe_3 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country[year] , 
+                panel_data, panel.id = ~country+year)
+
+#etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
+modelsummary(list(res_fe_2, res_hfe_2, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE)
+```
+```{r}
+coefplot(res_fe_2)
+```
+
+```{r}
+coefplot(res_hfe_2)
+```
+
 
 \newpage
 
