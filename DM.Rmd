@@ -862,7 +862,7 @@ The results are reported in the below table.
 \
 
 ```{r chunk41, eval=FALSE, include=FALSE}
-pht <- plm(Delinquency_Status ~ confirmed + E_LoanToValue + Credit_score + Current_Interest_Rate | confirmed + E_LoanToValue + Current_Interest_Rate,
+pht <- plm(Delinquency_Status ~ confirmed + E_LoanToValue + Credit_score | E_LoanToValue + confirmed,
           data=DB_KJ,model="random",random.method = "ht", inst.method = "baltagi")
 summary(pht)
 ```
