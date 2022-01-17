@@ -161,6 +161,7 @@ As shown in the previous question, our dataset has an unbalanced panel data stru
 
 Starting by exploring missing observations, the table shows that 6.75% of monthly loan performance observations relate to mortgage loans originated in locations that are not in an MSA - amounting to 22,351 loans, or 6.4% of the total of mortgages in our database. Those loans are likely to have been originated in sparsely populated areas.  
 
+\
 ```{r chunk3}
 DB %>%
   group_by(Loan_Seq_Number) %>%
@@ -239,13 +240,15 @@ None of our loan performance data display discontinuities between observations.
 
 \
 
-The pooled, within and between variance is defined as below: 
+The pooled, within and between are defined as below: 
   
   - Pooled deviation = $x_{i,t} - \overline{x}$
   - Within deviation = $x_{i, t} - \overline{x}_i$
   - Between deviation = $\overline{x}_{i} - \overline{x}$
   
-  ```{r chunk7}
+Then we take the variance for each variable and each transformation.
+  
+```{r chunk7}
 pooled <- DB_KJ %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
   summarise(across(c(Delinquency_Status:Fintech), ~var(., na.rm = T))) %>% 
@@ -338,8 +341,7 @@ within_plot <- ggplot(within_data, aes( {{ col }} )) +
   stat_function(fun = dnorm,
                 args = list(mean = mean(within_data %>% pull()), # there's only 1 column
                             sd = sd(within_data %>% pull())), # pull is like within_data$col
-                col = "#1b98e0",
-size = 1) +
+                col = "#1b98e0", size = 1) +
   # To compute the kernel distribution
   geom_density(adjust = adjust)  + 
   labs(title = paste('Within transformation for ', col_name))
@@ -349,8 +351,7 @@ between_plot <- ggplot(between_data, aes( {{ col }} )) +
   stat_function(fun = dnorm,
                 args = list(mean = mean(between_data %>% pull()),
                             sd = sd(between_data %>% pull())),
-                col = "#1b98e0",
-                size = 1) +
+                col = "#1b98e0", size = 1) +
   geom_density(adjust = adjust)  + 
   labs(title = paste('Between transformation for ', col_name))
 
@@ -603,6 +604,7 @@ We now turn to exploring autocorrelation and trend-correlation of the within-tra
 
 Starting with autocorrelation, we compute the autocorrelation coefficients for the following variables: delinquency status, confirmed COVID cases, the current interest rate, the current unpaid principal balance and estimated loan to value. 
 
+\
 ```{r chunk26}
 # Correlation with past values using within transformation
 within_transformation_graph %>% 
@@ -651,7 +653,7 @@ within_transformation_graph %>%
 The extremely small p-values reported in the above table shows the significance of the strong auto-regressive pattern that we identified for those variables. 
 
 We now examine the time-trend of those within-transformed variable.  
-
+\
 ```{r chunk28}
 # Correlation with the trend
 within_cor_trend <- within_transformation_graph %>% 
@@ -725,7 +727,6 @@ To estimate the strength of those relationship, we turn to a Linear Probability 
 
 **12.1. Linear Probability Models (LPM) on between-transformed variables.**
   
-  \
 
 We run a between Linear Probability Model (LPM) regression of the loans' delinquency status on :
 
@@ -733,7 +734,6 @@ We run a between Linear Probability Model (LPM) regression of the loans' delinqu
 - (ii) the borrower's estimate loan-to-value
 - (iii) the loan's current interest rate.  
 
-\
 
 ```{r chunk33}
 reg_between <- plm(Delinquency_Status ~ confirmed+E_LoanToValue+Current_Interest_Rate, 
@@ -777,7 +777,6 @@ reg_between <- plm(Delinquency_Status ~ Current_Interest_Rate,
                     model = "between") 
 ```
 
-\
 
 For the coming regressions, we will focus on the first relationship, on the drivers of mortgage loan delinquency, as unfortunately, running the Linear Probability Models for predicting the probability of Fintech lending on the different variables transformations is computationally very heavy.   
 
@@ -839,7 +838,6 @@ Finally, to check the existence of individual fixed effects, we run a Hausman te
 \newpage
 **12.5. Hausman endogeneity test**
 
-\
 
 ```{r chunk40}
 kable(tidy(phtest(plmrandom, plmwithin)), caption=
@@ -867,7 +865,6 @@ The results are reported in the below table.
 pht <- plm(Delinquency_Status ~ confirmed + E_LoanToValue + Credit_score + Current_Interest_Rate | confirmed + E_LoanToValue + Current_Interest_Rate,
           data=DB_KJ,model="random",random.method = "ht", inst.method = "baltagi")
 summary(pht)
-
 ```
 \
 We now end up with theoretically unbiased estimations of those panel marginal effects. The results are quite comparable to the other specifications: all variables are significant to the 1% level. Nonetheless, the R-squared is extremely low. 
@@ -980,6 +977,9 @@ panel_data %>%
 
 \
 
+Taking the log for GDP per capita, Population and ODA net, we then take the first difference in order to get the growth rate.
+
+
 ```{r chunk48, echo=TRUE}
 panel_data <- panel_data %>% 
   arrange(country, year) %>% 
@@ -1000,8 +1000,9 @@ panel_data <- panel_data %>%
 We separate our dataset in two periods of approximately equal size in terms of available observations: 2002-2013 for Period 1 and 2014-2019 for Period 2.
 
 As in Jia and Williamson (2018), we compare the countries that are the top recipients of foreign aid compared to GDP in those two subsets of the database.
-
-
+\
+First, Period 1 2002-2013 :
+\
 ```{r chunk49}
 Period_1 <- subset(panel_data, year == 2002:2013)
 
@@ -1015,6 +1016,10 @@ Period_1 %>%
   slice_max(oda_net_gdp_cap, n = 10) %>% 
   mutate_if(is.numeric, ~round(., 3))
 ```
+
+\
+Secondly, Period 2 2014-2019 :
+\
 
 ```{r chunk50}
 Period_2 <- subset(panel_data, year == 2014:2019)
@@ -1117,7 +1122,7 @@ panel_data %>%
 \
 
 We start by examining the bivariate graphs in the between transformation case. 
-
+\
 ```{r chunk55}
 between_transformation %>% 
   pivot_longer(-c(country, g_gdp_per_cap)) %>% 
@@ -1184,7 +1189,7 @@ within_bivariate <- panel_data %>%
 Turning now to the bivariate graphs of the within case:
   
   
-  ```{r chunk60}
+```{r chunk60}
 plot_biv <- function(data, x, y) {
   
   data %>% 
@@ -1283,7 +1288,8 @@ res_hfe = feols(oda_gni ~  log(population) + log(gdp_per_cap) | country + year,
                 panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log", stars = TRUE,
+             title ='Fixed effects model with ODA / GNI as dependent variable') %>%
   kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
@@ -1308,7 +1314,8 @@ res_hfe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country
                   panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_2, res_hfe_2), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+modelsummary(list(res_fe_2, res_hfe_2), gof_omit = "Pseudo|IC|Log", stars = TRUE,
+             title = 'Fixed effects model with Corruption index as dependent variable') %>%
   kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
@@ -1329,7 +1336,8 @@ res_hfe_3 = feols(g_gdp_per_cap ~  oda_gni + log(gdp_per_cap) + g_oda_net + corr
                   panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_3, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+modelsummary(list(res_fe_3, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE,
+             title = 'Fixed effects model with the growth rate of GDP per capita as dependent variable') %>%
   kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
@@ -1344,9 +1352,9 @@ The above table further proves that none of the regressors is statistically sign
 
 #### 11. Propose an additional interesting estimation using this database.
 
-Should try First difference model
+\
 
-
+Starting again from a Fixed-Effects model, considering Corruption as the dependent variable, ODA / GNI, log of GDP per cap and the growth rate of ODA as independent variable and finally, as Fixed Effects, country plus year. 
 
 ```{r chunk70}
 res_fe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country , 
@@ -1355,51 +1363,56 @@ res_fe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country 
 res_hfe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country + year, 
                   panel_data, panel.id = ~country+year)
 
-res_hfe_3 = feols(corruption ~  oda_gni + log(gdp_per_cap) + l(g_oda_net, 0:1) | country + year, 
-                  panel_data, panel.id = ~country+year)
-
-#etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_2, res_hfe_2, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+modelsummary(list(res_fe_2, res_hfe_2), gof_omit = "Pseudo|IC|Log", stars = TRUE,
+             title = 'Fixed effects model with Corruption index as dependent variable') %>%
   kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
-We can also analyse our fixed effects and see which ones are the most impactful.
+\
+We can then  analyse our fixed effects and see which countries and year are distributed around the mean for the corruption variable. A negative value means a higher level of corruption compared to the mean. Hence, Equatorial Guinea and Iraq have higher level of corruptions while Bhutan or the Rwanda have lower level of corruption. 
 
-```{r chunk71, fig.height=4, fig.width=8}
-plot(fixef(res_fe_2))
-```
+Moreover, it seems that the level of corruptions is descreasing over time. The highest level of corruption concerns the year 2003, while 2019 is the year which have the lowest level of corruption.
+\
+
 
 ```{r chunk72, fig.height=4, fig.width=8}
 plot(fixef(res_hfe_2))
 ```
-The year 2003 can be considered as an outlier ?
   
   
-```{r chunk73}
-# Varying slope, not working well
-res_hfe_3 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country[year] , 
-                  panel_data, panel.id = ~country+year)
-
-#etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_2, res_hfe_2, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
-  kable_styling(latex_options = c("striped", "hold_position"))
-```
-
-\
-```{r chunk74}
-coefplot(res_fe_2)
-```
-
-\
-
-```{r chunk75}
-coefplot(res_hfe_2)
-```
-
 
 \newpage
 
 #### 12. Compute the between and within transformations of the 11 variables over the full period. Provide histograms for ODA/GPD, growth of ODA, growth of GDP/head for both between and within transformed. Comment.
+
+\
+We begin by ploting the between transformation over the full period. The between growth rate of ODA can have negative values because we're considering Net ODA. Moreover, our between transformed variables are likely skewed.
+\
+
+```{r echo=TRUE, out.width = '55%'}
+between_transformation %>% 
+  select(country, oda_gni, g_oda_net, gdp_per_cap) %>% 
+  pivot_longer(-country) %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~name, scales = 'free')
+```
+
+\
+And then, plotting the within transformation for *oda_gni, g_oda_net, gdp_per_cap* variables.
+Again, with the within transformation, it more likely that our variables are normally distributed around 0 even though, concerns about high kurtosis are there. 
+\
+
+```{r out.width = '55%'}
+panel_data %>% 
+  select(country, year, oda_gni, g_oda_net, gdp_per_cap) %>% 
+  group_by(country) %>% 
+  mutate(across(where(is.double),~ . -  mean(., na.rm = T))) %>% 
+  pivot_longer(-c(country, year)) %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~name, scales = 'free')
+```
 
 
 
