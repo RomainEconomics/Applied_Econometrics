@@ -4,11 +4,11 @@ date: "01/01/2022"
 output:
   pdf_document: 
   html_document:
-    df_print: paged
+  df_print: paged
 editor_options: 
   markdown: 
-    wrap: 72
-    
+  wrap: 72
+
 header-includes:
   \usepackage[english]{babel}
   \usepackage[T1]{fontenc}
@@ -25,6 +25,19 @@ header-includes:
   \usepackage{amsfonts} 
   \usepackage{booktabs}
   \usepackage{siunitx}
+  
+  \usepackage{longtable}
+  \usepackage{array}
+  \usepackage{multirow}
+  \usepackage{wrapfig}
+  \usepackage{colortbl}
+  \usepackage{pdflscape}
+  \usepackage{tabu}
+  \usepackage{threeparttable}
+  \usepackage{threeparttablex}
+  \usepackage[normalem]{ulem}
+  \usepackage{makecell}
+  
   \newcolumntype{d}{S[input-symbols = ()]}
   
   \geometry{left=0.8in,right=0.8in,top=1.0in,bottom=1.0in}
@@ -33,7 +46,7 @@ header-includes:
   
   \title{Applied Econometrics Homework \\ M2 FE }
 ---
-
+  
 ```{=tex}
 \pagestyle{fancy}
 \fancyhf{}
@@ -47,6 +60,7 @@ header-includes:
 knitr::opts_chunk$set(echo = FALSE, 
                       message=FALSE, 
                       warning=FALSE,  
+                      cache=TRUE,
                       results = "hold",
                       out.width = '70%',
                       fig.align='center',
@@ -65,9 +79,6 @@ library(modelsummary)
 library(kableExtra)
 library(ggrepel) # for spacing text inside plots
 library(tidyverse)
-library(sf)
-library(usmap)
-library(tsibble)
 library(DBI) 
 library(DataExplorer)
 library(patchwork)
@@ -77,101 +88,99 @@ library(PerformanceAnalytics)
 library(psych)  
 ```
 
-```{r echo=TRUE}
+```{r}
 con <- dbConnect(RSQLite::SQLite(), "Data/DB.sqlite")
-DB = tbl(con, "DB")
-
-DB %>% 
-  head() %>% 
-  collect()
+DB <- tbl(con, "DB")
 ```
 
+## PART A
 
+#### Option 1  Master thesis dataset
 
-\newpage
-
-## PART A:
-
-#### Option 1 - Master thesis dataset
-
+\
+\
 Khalil's Master thesis explores the topic of the performance of securitized mortgage loans in the US in the context of the coronavirus crisis. Based on issuance and performance data for more than 346,724 mortgage loans purchased by Freddie Mac in 2020Q1, combined with neighborhood-level coronavirus data, the thesis will examine, at the US local level, whether the coronavirus outbreak affected these loans' (i) delinquency status and (ii) prepayment. In parallel, the Master thesis also enquires whether the status of the lender that originated the loan - commercial bank or shadow bank, Fintech or not - has an influence on those two loan performance metrics. 
 
-\newpage
+In those datasets, data are available at the geographical level of the Metropolitan Statistical Area (or MSA). MSAs are defined as "a core area containing a substantial population nucleus (50,000+ inhabitants), together with adjacent communities having a high degree of economic and social integration with that core". The US counts 384 MSA across the country. 
 
 
 #### 1. In your data set, which are the variables which are varying with respect to two indices (or more if you consider inflows and outflows from one individual or country to another individual or countries? Which are the variables which are varying only with respect to time? Which are the variables which are varying only with respect to individuals?
-
-
+\
+\
 For each loan, the database records: 
-
-- (i) time-invariant issuance metrics. Those variables vary only  with respect to individuals (in other words by loan) and do not vary over. Those time-invariant variables regroup for instance borrower credit score at issuance, the original loan to value, XXX and the lender type. 
+  
+  - (i) time-invariant issuance metrics. Those variables vary only  with respect to individuals (in other words by loan) and do not vary over. Those time-invariant variables regroup for instance borrower credit score at issuance, the original loan to value, Original borrower debt-to-income and the lender type. 
 
 - (ii) time-varying performance metrics. Those variables vary both with respect to time and with respect to individuals. For instance, prepayment (Zero Balance Code), Delinquency status, and unpaid principal. 
 
 
-
 #### 2. What is the largest number of period T for individuals? What is the number of individuals?
-
+\
 
 The dataset counts 17 time periods, spanning from a month in 2020Q1 to June 2021. The sample consists of 346,724 loans, originated at various dates but purchased by Freddie Mac in 2020Q1. 
 
-```{r}
+
+```{r chunk1}
 DB %>% 
+  count(Loan_Seq_Number) %>%
+  summarise(Number_Loans = n(),
+            Max_T = max(n, na.rm = TRUE),
+            Min_T = min(n, na.rm = TRUE),
+            Mean_T = mean(n, na.rm = TRUE),
+            Median_T = median(n, na.rm = TRUE)
+  ) %>% 
+  collect()
+```
+
+\
+Lenders originating and selling these mortgage loans are classified as either commercial banks or shadow banks. The latter category also includes Fintech lenders. 
+
+```{r chunk2}
+DB %>%  
+  mutate(Type = case_when(
+    Lender_Type == 1 ~ 'Bank',
+    Lender_Type == 0 & Fintech == 0 ~ 'Shadow Bank',
+    Lender_Type == 0 & Fintech == 1 ~ 'Fintech'
+  )) %>% 
+  group_by(Type) %>% 
   count(Loan_Seq_Number) %>% 
   summarise(Number_Loans = n(),
             Max_T = max(n, na.rm = TRUE),
             Min_T = min(n, na.rm = TRUE),
             Mean_T = mean(n, na.rm = TRUE),
-            Median_T = median(n, na.rm = TRUE),
-            ) %>% 
+            Median_T = median(n, na.rm = TRUE)) %>% 
   collect()
 ```
-
-Lenders originating and selling these mortgage loans are classified as either commercial banks or shadow banks. The latter category also includes Fintech lenders. 
-
-```{r}
-DB %>%  
-  mutate(Type = case_when(
-           Lender_Type == 1 ~ 'Bank',
-           Lender_Type == 0 & Fintech == 0 ~ 'Shadow Bank',
-           Lender_Type == 0 & Fintech == 1 ~ 'Fintech'
-         )) %>% 
-  group_by(Type) %>% 
-  count(Loan_Seq_Number) %>% 
-  summarise(Number_Loans = n(),
-                   Max_T = max(n, na.rm = TRUE),
-                   Min_T = min(n, na.rm = TRUE),
-                   Mean_T = mean(n, na.rm = TRUE),
-                   Median_T = median(n, na.rm = TRUE)) %>% 
-  collect()
-```
-
-\newpage
-
 
 
 #### 3. Comment on the structure of the unbalanced panel (how many (and which) countries have a single observation, discontinuities between observations, how many have at least 2 consecutive observations (which is useful to compute lags, autocorrelations, first difference and within estimators)?
 
+\
+
 As shown in the previous question, our dataset has an unbalanced panel data structure, with time periods per individual loan varying from 1 to 17.
 
+Starting by exploring missing observations, the table shows that 6.75% of monthly loan performance observations relate to mortgage loans originated in locations that are not in an MSA - amounting to 22,351 loans, or 6.4% of the total of mortgages in our database. Those loans are likely to have been originated in sparsely populated areas.  
 
-
-```{r}
+```{r chunk3}
 DB %>%
   group_by(Loan_Seq_Number) %>%
   tally() %>% 
   count(n) %>%
   rename(Number_Periods_available = n,
          Number_of_loans = nn) %>% 
-  mutate(cum = cumsum(Number_of_loans),
-         percent = 100 * (cum / 346724)) %>% 
+  mutate(percent = 100 * (Number_of_loans / 346724),
+         cumulative_sum = cumsum(Number_of_loans),
+         cumulative_percent = 100 * (cumulative_sum / 346724)) %>%
+  mutate_all(., ~round(., 3)) %>% 
   collect()
 ```
 
+\
 
 
 
-```{r}
+
+```{r chunk4}
 DB_temp <- DB %>% 
   # Reformatting the "Zero Balance Code" variable: 1 if prepaid, 0 otherwise
   mutate(Zero_Balance_Code = ifelse(Zero_Balance_Code == 1, 1, 0),
@@ -187,7 +196,7 @@ DB_temp <- DB %>%
 ```
 
 
-```{r}
+```{r chunk5}
 DB_KJ <- DB_temp %>% 
   select(Loan_Seq_Number, Reporting_Period, Delinquency_Status, Zero_Balance_Code,
          confirmed, Credit_score, Current_Interest_Rate,Current_UPB, E_LoanToValue,
@@ -198,43 +207,25 @@ DB_KJ <- DB_temp %>%
   lazy_dt()
 ```
 
+Monthly developments in COVID-19 confirmed cases by MSA are also missing in 8.45% of our monthly loan performance observations. This percentage includes the 6.75% of loan performance observations that are not located in an MSA. As our loan performance data start in February 2020, the remaining missing COVID-19 observations are related to monthly loan performance data that date prior to March 2020 - date at which COVID-19 cases started to be tracked. 
 
-```{r}
+
+```{r chunk6}
 Loans_by_MSA <- 
   DB_temp %>%                             
   group_by(MSA) %>%
   summarise(LoansPerMSA = n_distinct(Loan_Seq_Number)) %>% 
   collect() %>% 
-  arrange(desc(LoansPerMSA))
+  arrange(desc(LoansPerMSA)) %>% 
+  mutate(Percent = round(100 * (LoansPerMSA / 346724), 2))
 
 Loans_by_MSA
-
-# Identifying which loans are not related to an MSA (22,351 / 346,724)
-#sum(Loans_by_MSA$LoansPerMSA)
 ```
 
-
-
-\newpage
-
-```{r}
-full_dates <- DB %>%
-  group_by(Loan_Seq_Number) %>%
-  tally() %>% 
-  filter(n == 17) %>% 
-  pull(Loan_Seq_Number)
-
-DB_test <- DB_KJ %>% 
-  filter(Loan_Seq_Number %in% full_dates)
-```
+\
 
 
 
-
-
-Starting by exploring missing observations, the graph shows that 6.75% of monthly loan performance observations relate to mortgage loans originated in locations that are not in an MSA - amounting to 22,351 loans, or 6.4% of the total of mortgages in our database. Those loans are likely to have been originated in sparsely populated areas.  
-
-Monthly developments in COVID-19 confirmed cases by MSA are also missing in 8.45% of our monthly loan performance observations. This percentage includes the 6.75% of loan performance observations that are not located in an MSA. As our loan performance data start in February 2020, the remaining missing COVID-19 observations are related to monthly loan performance data that date prior to March 2020 - date at which COVID-19 cases started to be tracked. 
 
 
 As briefly shown in question 2, we have between 1 and 17 consecutive observation for each loan contract. Nonetheless, the number of loans for which we have only 1 period of observation is very small compared to the total number of loans of the dataset - 123 out 346,724, or 0.3%. All the other loans therefore have at least 2 consecutive observations.
@@ -242,22 +233,26 @@ As briefly shown in question 2, we have between 1 and 17 consecutive observation
 
 None of our loan performance data display discontinuities between observations.   
 
+
+
 #### 4. Compute between transformed and within transformed variables for all variables. Present a table with the within, between and pooled variance for each variable. Compute the share of between and within variance in the total variance for each variable. Comment these results.
 
+\
+
 The pooled, within and between variance is defined as below: 
-
-- Pooled deviation = $x_{i,t} - \overline{x}$
-- Within deviation = $x_{i, t} - \overline{x}_i$
-- Between deviation = $\overline{x}_{i} - \overline{x}$
-
-```{r}
+  
+  - Pooled deviation = $x_{i,t} - \overline{x}$
+  - Within deviation = $x_{i, t} - \overline{x}_i$
+  - Between deviation = $\overline{x}_{i} - \overline{x}$
+  
+  ```{r chunk7}
 pooled <- DB_KJ %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
   summarise(across(c(Delinquency_Status:Fintech), ~var(., na.rm = T))) %>% 
   pivot_longer(c(Delinquency_Status:Fintech), names_to = 'variable', values_to = 'Pooled')
 ```
 
-```{r}
+```{r chunk8}
 # Within transformation
 within_transformation <- DB_KJ %>% 
   group_by(Loan_Seq_Number) %>% 
@@ -267,7 +262,7 @@ within_transformation <- DB_KJ %>%
   pivot_longer(c(Delinquency_Status:Fintech), names_to = 'variable', values_to = 'Within')
 ```
 
-```{r}
+```{r chunk9}
 between_transformation <- DB_KJ %>% 
   group_by(Loan_Seq_Number) %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~  mean(., na.rm = T)) %>% 
@@ -278,12 +273,13 @@ between_transformation <- DB_KJ %>%
 
 The below table decomposes the total (pooled) deviation into a Within and Between part.  
 
-```{r}
+```{r chunk10}
 pooled %>% 
   left_join(within_transformation, by = 'variable') %>% 
   left_join(between_transformation, by = 'variable') %>% 
-  kable() %>%
-kable_styling(latex_options = c("striped", "hold_position"))
+  #mutate_if(is.numeric, ~round(., 4)) %>% 
+  kable( booktabs = T) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
 We can firstly single out the variances of the variables "Confirmed" (which captures the confirmed COVID-19 cases by MSA) and Current_UPB", as they have a significantly greater magnitude. On the other extreme of the spectrum, variables such as the "Delinquency status", the "Zero Balance Code" display among the lowest variances. Those variables have both non-zero within and between variance. 
@@ -297,13 +293,13 @@ Confirmed COVID cases therefore supply most of the variance, followed by the cur
 
 
 #### 5. Plot the distribution of the within and between transformed dependent variable and of you key (preferred) explanatory variable (not all the explanatory variable) [in Burnside and Dollar: GDP growth and foreign aid EDA/GDP], using on the same graph an histogram, a normal law with same empirical mean and standard error and a kernel continuous approximation. Comment the between and within difference for each variable, and compare within/within for dependent and explanatory variable, and between/between for dependent and explanatory variable: kurtosis, skewness, non-normality, high leverage observation (far from the mean), several modes (mixture of distribution)?
-
+\
 
 We carried out the calculation of within and between transformations for all variables except the binary variables - namely the lender type - as it would not deliver any useful information. We therefore plot the distribution of the Within and Between transformed variables for the "Delinquency status" dependent variable - which is a categorical variable - and one chosen explanatory variable, "Confirmed COVID cases" - which is continuous.
 
 We chose to plot them on separate charts for better visual representation, to facilitate comparison.  
 
-```{r}
+```{r chunk11}
 within_transformation_graph <- DB_KJ %>% 
   group_by(Loan_Seq_Number) %>% 
   mutate_at(vars(Delinquency_Status:Fintech), ~ . -  mean(., na.rm = T)) %>% 
@@ -318,7 +314,7 @@ between_transformation_graph <- DB_KJ %>%
 ```
 
 
-```{r include=FALSE}
+```{r chunk12}
 within_between_plot <- function(col, adjust = 1) {
   # col is the name of the variable we're interested in
   # adjust is used to smooth the kernel curve (the black one)
@@ -343,7 +339,7 @@ within_plot <- ggplot(within_data, aes( {{ col }} )) +
                 args = list(mean = mean(within_data %>% pull()), # there's only 1 column
                             sd = sd(within_data %>% pull())), # pull is like within_data$col
                 col = "#1b98e0",
-                size = 1) +
+size = 1) +
   # To compute the kernel distribution
   geom_density(adjust = adjust)  + 
   labs(title = paste('Within transformation for ', col_name))
@@ -362,41 +358,47 @@ within_plot + between_plot
 }
 ```
 
-5.1. Between and Within transformation of the independent variable (confirmed COVID cases): 
 
-```{r echo=TRUE, fig.height=7, fig.width=}
+##### 5.1. Between and Within transformation of the independent variable (confirmed COVID cases)
+
+\
+
+```{r chunk13, fig.height=4, fig.width=8}
 within_between_plot(confirmed, adjust = 10) & theme_bw()
 ```
 
 The most striking feature is the non-normality of the "Confirmed COVID cases" variable in the Between transformation case. A particularly striking point in the "Between" case is that the histogram and line are clearly skewed towards the right, owing to the presence of outliers (extremely large values at x = 30,000,000). We note that the greatest density is around x=0 in both the Within and Between cases. The striking point of the "Within" case is the leptokurtic normal distribution, with a relatively thicker right tail.   
 
-5.2. Between and Within transformation of the dependent variable (Delinquency Status): 
 
-```{r echo=FALSE, fig.height=8, fig.width=}
+##### 5.2. Between and Within transformation of the dependent variable (Delinquency Status) 
+
+\
+
+```{r chunk14, echo=FALSE, fig.height=4, fig.width=8}
 within_between_plot(Delinquency_Status, adjust = 10)  & theme_bw()
 ```
 
 The Within and Between histograms of the "Delinquency status" variable are notably more contrasted, owing to the categorical nature of this variable. Both charts are strongly centered around x=0. 
 The Within transformed variable displays a normal and strongly leptokurtic distribution. The kernel tails, while flattening, are still visible, owing to the presence of outliers. Those outliers are clearly visible in the Between transformation case, which is skewed to the right.   
 
-```{r include=FALSE}
+```{r chunk15, include=FALSE}
 Moments_stats <- function(data, col, title) {
   
   data %>% 
-  select({{ col }}) %>% 
-  summarise(skewness = skewness( {{ col }}, na.rm = T),
-            kurtosis = kurtosis( {{ col }}, na.rm = T)) %>% 
+    select({{ col }}) %>% 
+    summarise(skewness = skewness( {{ col }}, na.rm = T),
+              kurtosis = kurtosis( {{ col }}, na.rm = T)) %>% 
     pivot_longer(skewness:kurtosis, names_to = ' ', values_to = title)
-  }
+}
 ```
 
-```{r}
+```{r chunk16}
 Moments_stats(within_transformation_graph, confirmed, 'Confirmed Within') %>% 
   left_join( Moments_stats(between_transformation_graph, confirmed, 'Confirmed Between'), by =' ') %>%
   left_join( Moments_stats(within_transformation_graph, Delinquency_Status, 'Delinquency_Status Within'), by =' ') %>%
-  left_join( Moments_stats(between_transformation_graph, Delinquency_Status, 'Delinquency_Status Between'), by =' ') %>% 
-  kable() %>%
-kable_styling(latex_options = c("striped", "hold_position"))
+  left_join( Moments_stats(between_transformation_graph, Delinquency_Status, 'Delinquency_Status Between'), by =' ') %>%   mutate_if(is.numeric, ~round(., 3)) %>% 
+  kable( booktabs = T) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
 We compare the above skewness and kurtosis coefficients to those of a Normal distribution, which are respectively of 0 and 3. 
@@ -405,19 +407,17 @@ While the skewness coefficients are somewhat close to those of a normal distribu
 
 The Kurtosis coefficients confirm that the within and between distributions for both variables are strongly leptokurtic, especially in the case of the Delinquency status variable.  
 
-
-#ADD HERE A WORD ON OUTLIERS AND NON-NORMALITY
-
+\newpage
 
 #### 6. Plot boxplot of within distribution and between distribution for the dependent variable and the key explanatory variables. Comment that you find the same insights from question 5.
 
-```{r}
+```{r chunk17}
 boxplot_plot <- function(data, col, x_title) {
   
   data %>% 
-  ggplot(aes(x = {{ col }} )) +
-  geom_boxplot() +
-  coord_flip() +
+    ggplot(aes(x = {{ col }} )) +
+    geom_boxplot(alpha = 0.01) +
+    coord_flip() +
     labs(y = x_title, x = '') +
     theme_minimal()
   
@@ -425,16 +425,29 @@ boxplot_plot <- function(data, col, x_title) {
 ```
 
 
-```{r}
-boxplot_plot(within_transformation_graph, confirmed, 'Confirmed within') +
+```{r chunk18 }
+graph_chunk18 <- boxplot_plot(within_transformation_graph, confirmed, 'Confirmed within ') +
   boxplot_plot(within_transformation_graph, Delinquency_Status, 'Delinquency_Status within') +
   boxplot_plot(between_transformation_graph, confirmed, 'Confirmed between') +
   boxplot_plot(between_transformation_graph, Delinquency_Status, 'Delinquency_Status between') +
   plot_layout(ncol = 4)
+
+ggsave(file="chunk18.png", dpi=400, width=8, height=4, units='in')
 ```
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics{chunk18.png}
+\caption{Boxplot for Confirmed Covid cases and Delinquency Status considering within and between transformation}
+\end{center}
+\end{figure}
+
+\
+
 The result of the above boxplot confirms the intuitions derived from the graphs of question 5. 
 Firstly, both variables - both in the within and between transformation case - are centered around 0. 
 Secondly, in the Within-transformed case of both variables, we notice the low interquartile range, which matches their leptokurtic shapes in question 5. The above chart also confirms the presence of tails on both sides on the mean, with relatively more outliers above the mean in the case of the "Confirmed COVID cases" variable.
+
 Finally, turning to the Between-transformed case, the above chart confirms the significantly greater interquartile range for the "Confirmed COVID cases" variable and the presence extreme outliers. It also confirms the very small dispersion of the Between-transformed "Delinquency status" variable. 
 
 
@@ -442,32 +455,34 @@ Finally, turning to the Between-transformed case, the above chart confirms the s
 
 #### 7. Compute univariate descriptive statistics (min, Q1, median, Q3, max, mean, standard error) for Within and Between transformed variables. Is the mean different from the median and why? How many standard errors from the mean are the min and max extremes (report (MAX-average)/standard error and (MIN-average)/standard error in the tables)?
 
+\
 
-```{r include=FALSE}
+```{r chunk19, include=FALSE}
 univ_stats <- function(data, col, title) {
   
   data %>% 
-  select({{ col }}) %>% 
-  summarise(mean = mean( {{ col }}, na.rm = T),
-            median = median( {{ col }}, na.rm = T),
-            std = sd( {{ col }}, na.rm = T),
-            min = min( {{ col }}, na.rm = T),
-            max = max( {{ col }}, na.rm = T),
-            q25 = quantile( {{ col }}, probs = c(0.25), na.rm = T),
-            q75 = quantile( {{ col }}, probs = c(0.75), na.rm = T)) %>% 
-  pivot_longer(mean:q75, names_to = ' ', values_to = title)
+    select({{ col }}) %>% 
+    summarise(mean = mean( {{ col }}, na.rm = T),
+              median = median( {{ col }}, na.rm = T),
+              std = sd( {{ col }}, na.rm = T),
+              min = min( {{ col }}, na.rm = T),
+              max = max( {{ col }}, na.rm = T),
+              q25 = quantile( {{ col }}, probs = c(0.25), na.rm = T),
+              q75 = quantile( {{ col }}, probs = c(0.75), na.rm = T)) %>% 
+    pivot_longer(mean:q75, names_to = ' ', values_to = title)
   
 }
 ```
 
 
-```{r}
+```{r chunk20}
 univ_stats(within_transformation_graph, confirmed, 'Confirmed Within') %>% 
   left_join( univ_stats(between_transformation_graph, confirmed, 'Confirmed Between'), by =' ') %>%
   left_join( univ_stats(within_transformation_graph, Delinquency_Status, 'Delinquency_Status Within'), by =' ') %>%
   left_join( univ_stats(between_transformation_graph, Delinquency_Status, 'Delinquency_Status Between'), by =' ') %>% 
-  kable() %>%
-kable_styling(latex_options = c("striped", "hold_position"))
+  mutate_if(is.numeric, ~round(., 3)) %>% 
+  kable( booktabs = T) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
 The above table confirms the intuitions we derived from the charts and tables in question 5. 
 
@@ -480,7 +495,9 @@ Secondly, turning to the variable "Delinquency status", the very high kurtosis t
 
 #### 8. Plot the boxplot of within transformed dependent variable and the key explanatory variable by a few individual (all of them if N around 50) and only the first 20 of them for larger data set. Comment on their differences of standard errors and means for each individuals
 
-```{r}
+\
+
+```{r chunk21}
 random_20_indiv <- within_transformation_graph %>% 
   distinct(Loan_Seq_Number) %>% 
   slice_sample(n = 20) %>% 
@@ -490,14 +507,18 @@ within_transformation_graph %>%
   filter(Loan_Seq_Number %in% random_20_indiv) %>% 
   ggplot(aes(x = reorder(Loan_Seq_Number, Delinquency_Status), y = Delinquency_Status)) +
   geom_boxplot() +
-  coord_flip()
+  coord_flip() +
+  labs(title = 'Boxplot for the Delinquency Status variable for 20 random individuals',
+       y = 'Loan_Seq_Number')
 ```
-
+\
 This graphical representation unfortunately cannot provide useful insights for our dependent variable, as it is a categorical variable which takes on the value of 0 for most loans. 
 
 Nonetheless, we can infer more conclusions from the dependent variables' charts. 
 
-```{r}
+\
+
+```{r chunk22}
 random_20_indiv <- within_transformation_graph %>% 
   distinct(Loan_Seq_Number) %>% 
   slice_sample(n = 20) %>% 
@@ -507,12 +528,14 @@ within_transformation_graph %>%
   filter(Loan_Seq_Number %in% random_20_indiv) %>% 
   ggplot(aes(x = reorder(Loan_Seq_Number, E_LoanToValue), y = E_LoanToValue)) +
   geom_boxplot() +
-  coord_flip()
+  coord_flip() +
+  labs(title = 'Boxplot for the E_LoanToValue variable for 20 random individuals', 
+       y = 'Loan_Seq_Number')
 ```
+\
+The means are in overall centered around 0. Standard errors and interquartile ranges are very heterogeneous across different loans. 
 
-Means around 0. Very heterogeneous standard errors and interquartile ranges. 
-
-```{r}
+```{r chunk23}
 random_20_indiv <- within_transformation_graph %>% 
   distinct(Loan_Seq_Number) %>% 
   slice_sample(n = 20) %>% 
@@ -522,24 +545,29 @@ within_transformation_graph %>%
   filter(Loan_Seq_Number %in% random_20_indiv) %>% 
   ggplot(aes(x = reorder(Loan_Seq_Number, confirmed), y = confirmed)) +
   geom_boxplot() +
-  coord_flip()
+  coord_flip() +
+  labs(title = 'Boxplot for the Confirmed variable for 20 random individuals',
+       y = 'Loan_Seq_Number')
 ```
-
-Means precisely at 0. Very heterogeneous standard errors and interquartile ranges. 
+\
+Means precisely centered around 0. Standard errors and interquartile ranges are very heterogeneous across loans. 
 
 \newpage
 
 #### 9. Compare and comment the within and between transformed bivariate correlation matrix for all variables (include a time trend 1,2,.,T). Check poor simple correlation with the dependent variables and high correlation between explanatory variables.
 
+\
+\
 We exclude from the within variables bivariate correlation matrix the variables which are time-invariant (which therefore have 0 standard deviation). 
 
-```{r}
+```{r chunk24}
 within_transformation_graph %>% 
   mutate(Reporting_Period = as.numeric(as.factor(Reporting_Period)),
          MSA = as.factor(MSA),
          Seller_Name = as.factor(Seller_Name)) %>% 
-  select(-Loan_Seq_Number, -Reporting_Period, - MSA, -O_DebtToIncome, -O_LoanToValue,-Lender_Type,-Fintech, -Credit_score) %>% 
-datasummary_correlation(title = 'Correlation matrix within', fmt = 3) %>%
+  select(-Loan_Seq_Number, -Reporting_Period, - MSA, -O_DebtToIncome,
+         -O_LoanToValue,-Lender_Type,-Fintech, -Credit_score) %>% 
+datasummary_correlation(title = 'Correlation matrix considering a within transformation', fmt = 3) %>%
 kable_styling(latex_options = c("striped", "hold_position")) %>%
 row_spec(0, angle = 90)
 ```
@@ -549,12 +577,11 @@ As our dependent variable of interest is the "Delinquency status", we focus on t
 Those results are surprising: the number of confirmed cases, the estimated loan to value ratio and the loan's time to maturity are inversely related to the delinquency status. As increases in those variables indicate a degradation in the loans' credit quality, we would have expected those variables to be positively correlated with the delinquency status. 
 Only interest rate has an expected positive sign - as a higher cost of debt can reasonably be associated with a more important loan delinquency.  
 
-A WORD ON PREPAYMENT.
 
-```{r}
+```{r chunk25}
 between_transformation_graph %>% 
   select(-Loan_Seq_Number) %>% 
-datasummary_correlation(title = 'Correlation matrix between', fmt = 3) %>%
+datasummary_correlation(title = 'Correlation matrix considering a between transformation', fmt = 3) %>%
 kable_styling(latex_options = c("striped", "hold_position", "scale_down")) %>%
 row_spec(0, angle = 90)
 ```
@@ -564,20 +591,19 @@ Thanks to the presence of variance in more explanatory variables, we can identif
 Focusing again on the first column, the first striking point is that the correlation coefficients for nearly all variables take on an expected positive sign. Those above results indeed verify our working hypothesis that (i) confirmed COVID cases are positively related to the loan delinquency, similarly as (ii) interest rate, loan size, loan-to-value and debt-to-income. 
 Nonetheless, it remains surprising that the "Credit score" correlation coefficient is negative. Similarly, the positive coefficient for the "Lender type" variable is surprising, as it seems to indicate that the fact that the lender is a commercial bank is positively related to loan delinquency, compared to if it was a shadow bank. 
 
-A WORD ON PREPAYMENT.
-
-
 \newpage
 
 
 
 #### 10. Comment the bivariate auto-correlation and trend-correlations (check the number of observations).
 
+\
+
 We now turn to exploring autocorrelation and trend-correlation of the within-transformed variable and pooled variables (as the between-transformed variable has no time dimension). 
 
 Starting with autocorrelation, we compute the autocorrelation coefficients for the following variables: delinquency status, confirmed COVID cases, the current interest rate, the current unpaid principal balance and estimated loan to value. 
 
-```{r}
+```{r chunk26}
 # Correlation with past values using within transformation
 within_transformation_graph %>% 
   mutate(Reporting_Period = as.numeric(as.factor(Reporting_Period)),
@@ -588,14 +614,25 @@ within_transformation_graph %>%
   group_by(Reporting_Period) %>% 
   summarise(across(Delinquency_Status:Time_to_Maturity, ~mean(., na.rm = T))) %>% 
   summarise(across(Delinquency_Status:Time_to_Maturity, ~cor(., dplyr::lag(.), use = "complete.obs"))) %>% 
-  pivot_longer(Delinquency_Status:Time_to_Maturity)
+  pivot_longer(Delinquency_Status:Time_to_Maturity) %>% 
+  mutate(value = round(value, 3))
 ```
 
-The striking feature of the above table is that the within-transformed variables display a strongly auto-regressive pattern, with the delinquency status variables displaying the lowest coefficient as expected. Those results come as expected: (i) confirmed COVID-19 cases display a gradual rise over time, (ii) the current interest rate exhibits little change over time, (iii) the current unpaid principal balance displays a gradual decrease over time. 
+\
+
+The striking feature of the above table is that the within-transformed variables display a strongly auto-regressive pattern, with the delinquency status variables displaying the lowest coefficient as expected. 
+
+Those results come as expected: 
+
+- (i) confirmed COVID-19 cases display a gradual rise over time
+- (ii) the current interest rate exhibits little change over time
+- (iii) the current unpaid principal balance displays a gradual decrease over time. 
 
 We verify, using the below code, the p_value significance of those autocorrelation coefficients. 
 
-```{r}
+\
+
+```{r chunk27}
 # Within transformation autocorrelation - P-values
 within_transformation_graph %>% 
   mutate(Reporting_Period = as.numeric(as.factor(Reporting_Period)),
@@ -609,13 +646,15 @@ within_transformation_graph %>%
   pivot_longer(Delinquency_Status:Time_to_Maturity)
 ```
 
+\
+
 The extremely small p-values reported in the above table shows the significance of the strong auto-regressive pattern that we identified for those variables. 
 
 We now examine the time-trend of those within-transformed variable.  
 
-```{r}
+```{r chunk28}
 # Correlation with the trend
-test <- within_transformation_graph %>% 
+within_cor_trend <- within_transformation_graph %>% 
   mutate(Reporting_Period = as.numeric(as.factor(Reporting_Period)),
          MSA = as.factor(MSA),
          Seller_Name = as.factor(Seller_Name)) %>% 
@@ -625,17 +664,20 @@ test <- within_transformation_graph %>%
   summarise(across(Delinquency_Status:Time_to_Maturity, ~mean(., na.rm = T))) %>% 
   cor(use = "complete.obs")
 
-test[,1]
+within_cor_trend[,1]
 ```
+\
+
 The above table suggests that the the within-transformed COVID confirmed cases, current loan interest rate, unpaid principal balance and estimated loan-to-value ratio display strong time trends.
 
-# SEE IF WE CAN ADD P-VALUES FOR THOSE COEFFS
+
 
 \newpage
 
 #### 11. Comment the bivariate graphs with linear, quadratic and Lowess fit for dependent and key explanatory variable (aid/gdp and growth of gdp): Within transformed, Between transformed.
 
-```{r}
+\
+```{r chunk30}
 plot_biv <- function(data, x, y) {
   
   data %>% 
@@ -649,19 +691,25 @@ plot_biv <- function(data, x, y) {
 ```
 
 
-```{r}
+```{r chunk31}
 # Very slow ...
-within_transformation_graph[c(1:100000),] %>% 
+within_transformation_graph[c(1:50000),] %>% 
   filter(Current_UPB > -15000) %>% 
   drop_na(confirmed, Current_UPB) %>% 
-  plot_biv(x = confirmed, y = Current_UPB)
+  plot_biv(x = confirmed, y = Current_UPB) +
+  labs(title = "Bivariate graph for the within transformation of Confirmed and Current UPB variable",
+       subtitle = 'Blue line : linear, Red line : loess, Orange line : cubic')
 ```
 
-```{r}
+\
+
+```{r chunk32}
 # Very slow ...
-within_transformation_graph[c(1:100000),] %>% 
+within_transformation_graph[c(1:50000),] %>% 
   drop_na(confirmed, Delinquency_Status) %>% 
-  plot_biv(x = confirmed, y = Delinquency_Status)
+  plot_biv(x = confirmed, y = Delinquency_Status) +
+  labs(title = "Bivariate graph for the within transformation of Confirmed and Delinquency_Status variable",
+       subtitle = 'Blue line : linear, Red line : loess, Orange line : cubic')
 ```
 
 The relationship between confirmed COVID cases and our dependent variable (namely the loans' "Delinquency status") can unfortunately not be correctly captured through a linear correlation setup. 
@@ -673,112 +721,182 @@ To estimate the strength of those relationship, we turn to a Linear Probability 
 
 #### 12. Comment the results of estimations of Between, Within (fixed effects, (fe)) and Mundlak (random effects (re) including all X(i.) as regressors), two-way fixed effects (add year dummies in fe regression) and First differences, including all explanatory variables except the ones with high near-multicollinearity in their respective between or within space.
 
-WE WILL USE AN LPM
+\
 
-```{r}
-DB_reg <- DB_KJ %>% collect()
-DB_reg %>% count(Delinquency_Status)
+**12.1. Linear Probability Models (LPM) on between-transformed variables.**
+  
+  \
 
+We run a between Linear Probability Model (LPM) regression of the loans' delinquency status on :
 
-res_fe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number , 
-               DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
+- (i) the COVID-19 confirmed cases
+- (ii) the borrower's estimate loan-to-value
+- (iii) the loan's current interest rate.  
 
-res_hfe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period, 
-                DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
+\
 
-res_Hfe = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period + MSA, 
-                DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
-
-res_HFE = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + Reporting_Period + MSA + Seller_Name, 
-                DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
-
-etable(res_fe, res_hfe, res_Hfe, res_HFE, cluster = c('Loan_Seq_Number', 'Reporting_Period'))
-       #postprocess.df = pandoc.table.return, style = 'rmarkdown')
-
-#modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log")
-```
-
-
-
-```{r}
-res_fe2 = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number + MSA[confirmed] , 
-               DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
-
-res_fe3 = feols(Delinquency_Status ~  Current_Interest_Rate | Loan_Seq_Number[Current_UPB] + MSA , 
-               DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period)
-
-etable(res_fe2, res_fe3)
-```
-
-```{r}
-res_multi = feols(c(Delinquency_Status) ~ Current_Interest_Rate  | sw(Reporting_Period, Lender_Type),
-                  DB_reg, panel.id = ~Loan_Seq_Number+Reporting_Period, fsplit = ~Lender_Type)
-summary(res_multi, "compact")
-
-```
-
-
-
-
-```{r}
-reg_between <- plm(Delinquency_Status ~ Current_Interest_Rate, 
+```{r chunk33}
+reg_between <- plm(Delinquency_Status ~ confirmed+E_LoanToValue+Current_Interest_Rate, 
                     data = DB_KJ,
                     index = c("Loan_Seq_Number", "Reporting_Period"), 
                     model = "between") 
 
 summary(reg_between)
 ```
+\
+Although all the regressors are statistically significant, the extremely small size of the regressors suggests the weak power of those variables to account for variability in the Delinquency status variable. 
+We suspect that this is due to the significant imbalance in the dependent variable's distribution, as we have only 127,000 observations of significant loan delinquency against more than 4,700,000 observations of non-delinquency. This explains the very low R-squared of this regression. 
+
+As this homework exercise is an opportunity for us to explore this Freddie Mac loan performance dataset, we run a Linear Probability Model (LPM) with other variables, in order to answer a different question: "During the first periods of the COVID-19 crisis, did shadow banks, especially fintechs, serve riskier borrowers?"
+
+Based on Wang (2020), we run the following regression: 
+  \
+
+```{r chunk34}
+reg_between_2 <- plm(Fintech ~ E_LoanToValue+Credit_score+E_LoanToValue*Credit_score+Current_Interest_Rate, 
+                     data = DB_KJ,
+                     index = c("Loan_Seq_Number", "Reporting_Period"), 
+                     model = "between") 
+
+summary(reg_between_2)
+```
+
+\
+
+As in Wang (2020), the R-squared is very low. Consistently with the intuition from the literature and to Wang (2020), the lower the credit score at origination, the more likely the loan is to have been originated by a Fintech lender. The above coefficients can be interpreted the following way: a 1 unit decrease in borrower's FICO score raises the probability of the loan being originated by a Fintech of 0.084%. Turning to the interpretation of the loan-to-value ratio coefficient: a 1% decrease in the borrower LTV ratio raises the probability that the loan was originated by a Fintech lender. 
+Those results suggest that Fintech lenders, while targeting borrowers with lower credit scores, might compensate the risk by requiring a lower LTV ratio (in other words, higher collateral). 
+
+\
+
+**12.2. Linear Probability Models (LPM) on within-transformed variables.**
+
+```{r chunk35}
+reg_between <- plm(Delinquency_Status ~ Current_Interest_Rate, 
+                    data = DB_KJ,
+                    index = c("Loan_Seq_Number", "Reporting_Period"), 
+                    model = "between") 
+```
+
+\
+
+For the coming regressions, we will focus on the first relationship, on the drivers of mortgage loan delinquency, as unfortunately, running the Linear Probability Models for predicting the probability of Fintech lending on the different variables transformations is computationally very heavy.   
 
 
-```{r}
-#Fixed Effects (within) and Random Effects (random)
-plmwithin <- plm(Delinquency_Status~Current_Interest_Rate, 
+We now run within fixed effects, random fixed effects and first-difference estimations, starting by our first relationship of interest, between COVID cases at the MSA level and loan delinquency status. 
+
+
+
+```{r chunk36bis1}
+#Loan delinquency and local COVID cases: Fixed Effects (within) and Random Effects (random)
+plmwithin <- plm(Delinquency_Status~confirmed+E_LoanToValue, 
                  data = DB_KJ, model = "within")
+```
 
-plmrandom <- plm(Delinquency_Status~Current_Interest_Rate,  
+
+```{r chunk36bis2}
+plmrandom <- plm(Delinquency_Status~confirmed+E_LoanToValue,  
                  data = DB_KJ, model = "random")
+```
 
-plmfd <- plm(Delinquency_Status~Current_Interest_Rate,  
+
+```{r chunk36bis3}
+plmfd <- plm(Delinquency_Status~confirmed+E_LoanToValue,  
                  data = DB_KJ, model = "fd")
 ```
 
+The fixed effect estimation controls for MSA-level characteristics thanks to the inclusion of MSA fixed effects. While the MSA fixed effects avoid the risk of omitted variable bias - as it controls for time-invariant factors that vary across MSA.
 
-```{r}
+```{r chunk37}
 summary(plmwithin)
 ```
 
+\
 
-```{r}
+**12.3. Random effect estimation**
+\
+
+```{r chunk38}
 summary(plmrandom)
 ```
+\
+\
 
-```{r}
+**12.4. First difference estimation**
+\
+
+
+```{r chunk39}
 summary(plmfd)
 ```
+\
+One conclusion can be drawn of the above results: while the variable of confirmed COVID cases and for the estimated loan-to-value are significant at the 1% level, the R-squared and the correlation coefficients are extremely low.  
+Those results corroborate the findings of the between estimation: those two variables therefore do not seem to capture much variability in the Delinquency status data, due to the strong imbalance between delinquent and non-delinquent loans.   
+
+Finally, to check the existence of individual fixed effects, we run a Hausman test, comparing the results of the Between and Within Estimators.
+
+\
+
+\newpage
+**12.5. Hausman endogeneity test**
+
+\
+
+```{r chunk40}
+kable(tidy(phtest(plmrandom, plmwithin)), caption=
+ "Hausman endogeneity test for the random effects wage model",  booktabs = T)
+```
+
+The above output shows a low  p -value of the test, which indicates that the null hypothesis - stating that the individual random effects are exogenous - is rejected. The random effects estimation is therefore inconsistent. The fixed effects model is therefore the correct specification.
 
 
 \newpage
 
 #### 13. If one of your variable is time-invariant z(i) (Institutional quality ICRG for Burnside Dollar), run a baseline Hausman Taylor estimation including all X(i.) as instruments. Comment the results.
 
-WE WILL USE AN LPM
+\
 
-```{r}
-kable(tidy(phtest(plmwithin, reg_between)), caption=
- "Hausman endogeneity test for the random effects wage model")
+The effect of any time-invariant variable (such as the credit score) is eliminated through the "de-meaning transformation" of the variables. We therefore need to find a way to estimate the coefficients of "Confirmed" and "Estimated Loan-to-Value" without including fixed effects, while dealing with correlations with the error term, owing to ommitted variable bias. 
+The Hausmann-Taylor approach will therefore be useful for this purpose: it allows us to account for panel data biases and still estimate our panel data coefficients - which cannot be done in a standard fixed effect approach. 
+
+For conducting the Hausman-Taylor estimation, the R software does all the calculations for deciding which variable will be instrumented by a de-meaned instrumental variable and which variables will be employed in random effects.
+
+The results are reported in the below table. 
+\
+
+```{r chunk41, eval=FALSE, include=FALSE}
+pht <- plm(Delinquency_Status ~ confirmed + E_LoanToValue + Credit_score + Current_Interest_Rate | confirmed + E_LoanToValue + Current_Interest_Rate,
+          data=DB_KJ,model="random",random.method = "ht", inst.method = "baltagi")
+summary(pht)
+
 ```
-
-shows a low  p -value of the test, which indicates that the null hypothesis saying that the individual random effects are exogenous is rejected, which makes the random effects equation inconsistent. In this case the fixed effects model is the correct solution.
+\
+We now end up with theoretically unbiased estimations of those panel marginal effects. The results are quite comparable to the other specifications: all variables are significant to the 1% level. Nonetheless, the R-squared is extremely low. 
 
 \newpage
 
 #### 14. If one of your variable is time-invariant z(i) (Institutional quality ICRG for Burnside Dollar), run a between regression on z(i) explained by X(i.) and other time invariant variable (only with N observations). If the R2 is low, this may signal X(i.) are weak instruments poorly correlated with the variable z(i) to be instrumented. Comment.
 
-WE WILL USE AN LPM
+\
 
-\newpage
+To conclude, we verify the strength of our instruments by examining their correlation with our time-invariant variable "Credit score". 
+
+\
+```{r chunk42}
+reg_between_Zi_Xi <- plm(Credit_score ~ E_LoanToValue+confirmed+Current_Interest_Rate, 
+                    data = DB_KJ,
+                    index = c("Loan_Seq_Number", "Reporting_Period"), 
+                    model = "between") 
+
+summary(reg_between_Zi_Xi)
+```
+
+\
+
+Although each explanatory variable is significant at the 1% level, the reported R-squared is low (11%). Those results suggest the relative weakness of our the estimated Loan-to-Value ratio, the Confirmed COVID cases and Current interest rates variables for instrumenting the time-invariant variable Credit score. 
+
 
 #### 15. Optional: mention or propose improvements to the Python, STATA, SAS or R code (copy it here). Optional: propose improvements, additional insights, and you do not know how to code them.
+
 
 \newpage
 
@@ -786,9 +904,18 @@ WE WILL USE AN LPM
 
 #### 1. Download 5 panel data variables from World Bank and/or IMF and/or FRED databases for the recent period (1990-2020) and for the largest coverage of emerging economies: GDP/head, GDP/head PPP-adjusted (very last update), Log(population), Foreign aid/GDP (ODA), of log an index of corruption (or good public sector governance) from the World Bank. From now on, consider as your sample only country-year observations which are available for ALL the 5 variables for at least TWO CONSECUTIVE years for a given country. The full class may coordinate for this updated database. In all the following questions except perhaps the last one, the PPP adjusted GDP is not used. So we consider 4 variables excluding GDP/head PPP adjusted.
 
-We download yearly data for 88 countries over 23 periods (between 1996 and 2019) for the following variables: (i) the World Bank corruption index, (ii) GDP per capita in euros, (iii) PPP-adjusted GDP per capita (iv) foreign aid - as % of Gross National Income and per capita - and (v) population.     
+\
 
-```{r}
+We download yearly data for 88 countries over 23 periods (between 1996 and 2019) for the following variables: 
+
+- (i) the World Bank corruption index
+- (ii) GDP per capita in euros
+- (iii) PPP-adjusted GDP per capita 
+- (iv) foreign aid - as % of Gross National Income and per capita 
+- (v) population.     
+
+\
+```{r chunk43}
 # Import Data 
 # Inside the Data folder, get all the .RDS files except MSA_Large
 panel_data <- list.files(path =  'Data/', pattern="*[^(MSA_Large)].RDS") %>% 
@@ -798,16 +925,21 @@ panel_data <- list.files(path =  'Data/', pattern="*[^(MSA_Large)].RDS") %>%
 panel_data
 ```
 
-Based on the below table, as we lack observations for the years 1997, 1999 and 2001, we restrict our analysis to the 2002-2019 period for those 88 countries.  
+\
 
-```{r}
+Based on the below table, as we lack observations for the years 1997, 1999 and 2001, we restrict our analysis to the 2002-2019 period for those 88 countries.  
+\
+
+```{r chunk44}
 panel_data %>% 
   count(year)
 ```
 
+\
+
 We therefore remove the years 1996, 1998 and 2000 from our sample. 
 
-```{r}
+```{r chunk45}
 panel_data <- panel_data %>%
   filter(!year %in% c(1996, 1998, 2000))
 
@@ -815,9 +947,10 @@ panel_data %>%
   count(country)
 ```
 
+\
 As we are concerned with the impact of foreign aid on economic growth, we also remove from our sample countries that have a negative net ODA. 
 
-```{r}
+```{r chunk46}
 # We remove them because they have negative ODA for at least one year
 # We would need to find Gross ODA in order to have only positives values
 country_to_remove <- panel_data %>% 
@@ -829,9 +962,10 @@ country_to_remove <- panel_data %>%
 country_to_remove
 ```
 
+\
 We therefore arrive to the following final dataset, which comprises 77 countries over 18 years (2002-2019). 
 
-```{r}
+```{r chunk47}
 panel_data <- panel_data %>% 
   filter(!country %in% country_to_remove)
 
@@ -844,7 +978,9 @@ panel_data %>%
 #### 2. Compute 2 growth rates using the difference of log: the growth of GDP/head (difference of log, denoted GDPg), the growth of foreign aid ODAg (but NOT the growth for foreign aid/GDP: remove the difference of log of GDP from the difference of log of foreign aid/GDP).
 
 
-```{r}
+\
+
+```{r chunk48, echo=TRUE}
 panel_data <- panel_data %>% 
   arrange(country, year) %>% 
   group_by(country) %>% 
@@ -859,11 +995,14 @@ panel_data <- panel_data %>%
 
 #### 3. Compute the between average over time for the first period and for the second period for the 6 variables. Provide the top 10 of countries for ODA/GDP with average over time for each period.
 
+\
+
 We separate our dataset in two periods of approximately equal size in terms of available observations: 2002-2013 for Period 1 and 2014-2019 for Period 2.
 
 As in Jia and Williamson (2018), we compare the countries that are the top recipients of foreign aid compared to GDP in those two subsets of the database.
 
-```{r}
+
+```{r chunk49}
 Period_1 <- subset(panel_data, year == 2002:2013)
 
 Period_1 %>% 
@@ -877,7 +1016,7 @@ Period_1 %>%
   mutate_if(is.numeric, ~round(., 3))
 ```
 
-```{r}
+```{r chunk50}
 Period_2 <- subset(panel_data, year == 2014:2019)
 
 Period_2  %>% 
@@ -891,6 +1030,8 @@ Period_2  %>%
   mutate_if(is.numeric, ~round(., 3))
 ```
 
+\
+
 We notice that the 10 countries with the highest ODA/GDP average over the period differ between those two samples. While Malawi, Rwanda, Sierra Leone, Niger and the Central African Republic are top recipients in foreign aid / GDP on average for both periods 1 and 2, Burkina Faso, Cabo Verde and Tanzania have a lower relative to period 1 and are no more among the top 10 recipients in period 2. 
 
 Average ODA/GDP are higher in period 2 - ranging from 10.4% to 32% compared to 7.9% and 17% in period 1 - explained by the presence of other countries compared to period 1, namely the Gambia, Guinea-Bissau, the Solomon Islands, Burundi and Vanuatu. 
@@ -901,11 +1042,15 @@ The magnitude of the change in the average  ODA/GDP ratio for the Central Africa
 
 #### 4. Compute the proportion of country-years observations in your database such that 0\<=ODA/GDP\<0.5%
 
+\
+
 Now turning to the countries with the lowest ODA/GDP ratios, 23 countries of our dataset have ratios between 0% and 0.5%. Notably, Algeria, Brazil, Costa Rica, Dominican Republic, India, Mexico and Turkey have a ratio lower than 0.5% for all the 18 years of observations.
 
 Albania, Côte d'Ivoire, Iraq and Vietnam, while having among the lowest ODA/GDP ratios, have an ODA/GDP lower than 0.5% for only 1 year of observation.  
 
-```{r}
+\
+
+```{r chunk51}
 panel_data %>% 
   group_by(country) %>% 
   mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
@@ -920,8 +1065,9 @@ panel_data %>%
 
 #### 5. Compute the between and within transformations of the 6 variables over the full period. Provide the 4 histograms for ODA/GPD, growth of ODA, growth of GDP/head, corruption index for both between and within transformed variables (hence 8 histograms). Comment.
 
+\
 
-```{r}
+```{r chunk52}
 # Between transformation
 between_transformation <- panel_data %>% 
   group_by(country) %>% 
@@ -930,22 +1076,25 @@ between_transformation <- panel_data %>%
 ```
 
 The important message of the below charts in the non-normality of the 'Between-transformed' variables. While we have no numeric information regarding the parameters of those distributions, we notice that the Between-transformed 'corruption' variable displays a positive skewness - it has a relatively fatter right tail. The Between-transformed 'ODA / GDP per capita' rather has the shape of a gamma distribution. 
+\
 
-
-```{r}
+```{r chunk53}
 between_transformation %>% 
   select(country, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption) %>% 
   pivot_longer(-country) %>% 
   ggplot(aes(x = value)) +
   geom_histogram() +
-  facet_wrap(~name, scales = 'free')
+  facet_wrap(~name, scales = 'free') +
+  ggtitle('Between transformation')
 ```
+
+\
 
 The most striking characteristic in the 'within-transformed' case is the apparent normality of the corruption variable and the 'ODA / GDP per capita' variable. Although those charts give no precisions about the kurtosis of those within-transformed variable, we can at least conclude that the distributions are leptokurtic and that those variables are evenly-distributed around the mean. 
 
+\
 
-
-```{r}
+```{r chunk54}
 # Within transformation
 panel_data %>% 
   group_by(country) %>% 
@@ -955,7 +1104,8 @@ panel_data %>%
   pivot_longer(-country) %>% 
   ggplot(aes(x = value)) +
   geom_histogram(bins = 50) +
-  facet_wrap(~name, scales = 'free')
+  facet_wrap(~name, scales = 'free') +
+  ggtitle("Within Transformation")
 
 ```
 
@@ -964,9 +1114,11 @@ panel_data %>%
 
 #### 6. Provide the 3 bivariate graphs (with acronyms for observations NIC12, for Nicaragua 2012) for between and within (hence 6 graphs) of growth of GDP/head (vertical axis) with (1) ODA/GDP, (2) the growth of ODA; of corruption index with ODA/GDP. Comment.
 
+\
+
 We start by examining the bivariate graphs in the between transformation case. 
 
-```{r}
+```{r chunk55}
 between_transformation %>% 
   pivot_longer(-c(country, g_gdp_per_cap)) %>% 
   filter(name %in% c('g_oda_net', 'oda_net_gdp_cap')) %>% 
@@ -974,29 +1126,33 @@ between_transformation %>%
   geom_point() + 
   geom_smooth(method = "lm") +
   facet_wrap(~name, scales = 'free') + 
-   geom_text_repel(size = 2.5) +
+  geom_text_repel(size = 2.5) +
   labs(title = 'Between Transformation', 
        x = '',
        y = 'Growth of GDP per capita (constant 2015$)')
 ```
-
+\
 In the between case, a negative relationship between GDP per capita growth and (i) ODA/GDP and (ii) ODA/GDP growth seems to be captured by this linear model. Observations seems to be clustered around ODA/GDP = 0.05 and ODA/GDP growth a little above 0. We nonetheless need to examine whether to make sure whether the fitting of those 2 univariate models is not only due to noise, and therefore to examine the significance of the correlation coefficient between these two variables.  
 
-```{r}
+\
+
+```{r chunk56}
 summary(between_transformation %>% lm(g_gdp_per_cap ~ -1 + g_oda_net, data = .))
-
 ```
 
-```{r}
+\
+
+```{r chunk57}
 summary(between_transformation %>% lm(g_gdp_per_cap ~ -1 + oda_net_gdp_cap, data = .))
-
 ```
-
+\
 As per the above results, the correlation coefficient between GDP per capita and ODA/GDP is significant at the 1% level in both cases, which suggests that those two univariate models are not fitting to noise or outliers. 
 
 We continue by examining the bivariate graph of the corruption index and ODA/GDP in the between transformation case. 
 
-```{r}
+\
+
+```{r chunk58}
 between_transformation %>% 
   ggplot(aes(x = oda_net_gdp_cap, y = corruption, label = country)) + 
   geom_point() +
@@ -1007,9 +1163,10 @@ between_transformation %>%
        y = 'Corruption')
 ```
 
+\
 As opposed to the previous two cases, the bivariate linear specification does not manage to capture the variance of the corruption index. The regression line is close to y=0.  
 
-```{r}
+```{r chunk59}
 within_bivariate <- panel_data %>% 
   group_by(country) %>% 
   mutate(oda_net_gdp_cap = oda_net / gdp_per_cap) %>% 
@@ -1022,12 +1179,12 @@ within_bivariate <- panel_data %>%
   ungroup() %>% 
   select(country_year, country, year, gdp_per_cap, oda_net_gdp_cap, g_oda_net, g_gdp_per_cap, corruption, population) 
 ```
-
+\
 
 Turning now to the bivariate graphs of the within case:
-
-
-```{r}
+  
+  
+  ```{r chunk60}
 plot_biv <- function(data, x, y) {
   
   data %>% 
@@ -1044,24 +1201,34 @@ plot_biv <- function(data, x, y) {
 
 We start by plotting the within bivariate graph of the growth of GDP/capita with ODA/GDP. We add 3 specifications of regression lines to those clouds of data: a linear model (in blue), a quadratic specification (in orange) and a LOWESS specification (in red).   
 
-```{r}
+\
+
+```{r chunk61}
 within_bivariate %>% 
   plot_biv(x = oda_net_gdp_cap, y = g_gdp_per_cap)
 ```
+
+\
 In this first case, the 3 specifications fail to capture the variance of the growth of GDP/capita, as the fiting lines are nearly horizontal. Observations are markedly clustered around ODA/GDP = 0, which suggests orthogonality (or put simply, uncorrelation) between those two variables in the within-transformed case.  
 
 We then plot the within bivariate graph of the growth of GDP / capita with the growth rate of ODA.   
 
-```{r}
+\
+
+```{r chunk62}
 within_bivariate %>% 
   plot_biv(x = g_oda_net, y = g_gdp_per_cap)
 ```
+
+\
 
 The same conclusion can be drawn for this bivariate relationship in the linear case, which seems to fail to capture the variance of GDP per capita growth. While the quadratic and LOWESS specifications seem to perform slightly better, this is driven by the presence of outliers. 
 
 Finally, We plot the within bivariate graphs of the corruption index with ODA/GDP. Similarly to the previous case, the strong cluster around ODA/GDP = 0 signals the same orthogonality between those two variables, and the quadratic and LOWESS specifications seem to capture variance driven by the outliers.   
 
-```{r}
+\
+
+```{r chunk63}
 within_bivariate %>% 
   plot_biv(x = oda_net_gdp_cap, y = corruption)
 ```
@@ -1071,27 +1238,32 @@ within_bivariate %>%
 
 #### 7. Comment the between versus within correlation matrix for the 6 variables in this order
 
-```{r}
+\ 
+```{r chunk64}
 between_transformation %>% 
   select(c(oda_net_gdp_cap, corruption, population, gdp_per_cap, g_gdp_per_cap, g_oda_net)) %>% 
-datasummary_correlation(title = 'Correlation matrix') %>%
-kable_styling(latex_options = c("striped", "hold_position")) 
+  datasummary_correlation(title = 'Correlation matrix') %>%
+  kable_styling(latex_options = c("striped", "hold_position")) 
 ```
+
+\
+
 From the first column of the above table, we notice that as expected, corruption, population, and GDP per capita are negatively related to the level of foreign aid/GDP. This intuitively makes sense: higher GDP/capita calls for a lower need for foreign aid and higher corruption levels deters foreign aid. The correlation coefficient sign for the log of population and foreign aid/GDP is less intuitive to interpret. 
 We also notice the interesting strong and positive sign of the correlation coefficient between GDP per capita and the corruption index in the second column. 
 
 We analyze the correlation matrix for the within case as well. We perform the two analyses separately: grouping the between and within transformed variables in one same correlation matrix would provide little information, as the between and within variables are orthogonal by essence.    
 
+\
 
-```{r echo=FALSE}
+```{r chunk65, echo=FALSE}
 within_bivariate %>% 
   select(-country_year, - country, -year) %>% 
   relocate(oda_net_gdp_cap, corruption, population, gdp_per_cap, g_gdp_per_cap, g_oda_net) %>% 
-datasummary_correlation(title = 'Correlation matrix') %>%
-kable_styling(latex_options = c("striped", "hold_position")) 
-  
+  datasummary_correlation(title = 'Correlation matrix') %>%
+  kable_styling(latex_options = c("striped", "hold_position")) 
 ```
 
+\
 
 From the Within correlation matrix, we can observe that the correlation among our variables is much lower than in the case of the between correlation matrix. This confirms what we saw with the graphs in the previous question. Only three correlations are greater than 0,1. The highest correlation concerns the growth rate of ODA with ODA/GDP.
 
@@ -1101,7 +1273,9 @@ From the Within correlation matrix, we can observe that the correlation among ou
 
 #### 8. Run a one-way fixed effect foreign aid regression on ODA/GDP function of Ln(Population) and Ln(GDP/head). Comment.
 
-```{r}
+\
+
+```{r chunk66}
 res_fe = feols(oda_gni ~  log(population) + log(gdp_per_cap) | country , 
                panel_data, panel.id = ~country+year)
 
@@ -1109,14 +1283,13 @@ res_hfe = feols(oda_gni ~  log(population) + log(gdp_per_cap) | country + year,
                 panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log", stars = TRUE)
+modelsummary(list(res_fe, res_hfe), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
+
+\
 The above regression confirms the results of the above Between-correlation matrix: the two variables "population" and "GDP per capita" are negatively correlation with the foreign aid variable. 
 The addition of year fixed effects improves only very slightly the high R-squared and adjusted R-squared (by less than 1 percentage point). 
-
-
-Je crois que le Fixed effect model est équivalent à une Within transformation, du coup je sais pas si on doit pas plutot comparer avec la Within correlation matrix. Mais apres du coup, la correlation était nulle ou presque, et maintenant on a R2 élevé et un paramètre significatif. Je sais pas si on devrait pas dire qu'il y a le risque d'avoir une Unit Root, comme on utilise le Log(pop) et Log(GDP/cap) et qu'il faudrait essayer un First difference model.
-
 
 The coefficients are highly significant, at the 1% level for most. Those findings are therefore consistents with the results of the descriptive statistics. 
 
@@ -1125,37 +1298,43 @@ The coefficients are highly significant, at the 1% level for most. Those finding
 
 #### 9. Run a one-way fixed effect of Corruption Index function of Ln(GDP/head), of ODA/GDP and the growth of ODA. Comment.
 
-```{r}
+\
+
+```{r chunk67}
 res_fe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country , 
-               panel_data, panel.id = ~country+year)
+                 panel_data, panel.id = ~country+year)
 
 res_hfe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country + year, 
-                panel_data, panel.id = ~country+year)
+                  panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_2, res_hfe_2), gof_omit = "Pseudo|IC|Log", stars = TRUE)
+modelsummary(list(res_fe_2, res_hfe_2), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
+\
 As we noted in the descriptive statistics part of question 7, GDP per capita is positively correlated with the corruption variable, with a coefficient relatively larger in magnitude compared to the other two coefficients. The two foreign aid variables (as % of GDP and % growth) make nearly no contribution to the variance of the corruption index: the foreign aid growth variable is in fact not significant (as per the below table). Those results are therefore very much in line with the findings of the bivariate correlation matrix in question 7. 
-
-La aussi, je pense qu'on doit avoir un Unit Root, parce que un R2 de 0.9+, c'est suspect !
-
 We finally note that the inclusion of year fixed effect in model 2 does not add explanatory power to the model.  
 
 \newpage
 
 #### 10. Run a one-way fixed effect with the growth of GDP/head function of Ln(GDP/head), ODA/GDP, the growth of ODA and the Corruption index.
 
-```{r}
+
+```{r chunk68}
 res_fe_3 = feols(g_gdp_per_cap ~  oda_gni + log(gdp_per_cap) + g_oda_net + corruption| country , 
-               panel_data, panel.id = ~country+year)
+                 panel_data, panel.id = ~country+year)
 
 res_hfe_3 = feols(g_gdp_per_cap ~  oda_gni + log(gdp_per_cap) + g_oda_net + corruption | country + year, 
-                panel_data, panel.id = ~country+year)
+                  panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_3, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE)
+modelsummary(list(res_fe_3, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
+
+\
+
 The above regression results suggest no meaningful statistical relationship between GDP/capita growth and the Log(GDP/capita), foreign aid/GDP, foreign aid growth and the Corruption index: coefficients are of small magnitude, especially compared to standard errors, and the goodness-of-fit metrics (R-squared and Adjusted R-squared) are low. 
 
 
@@ -1167,53 +1346,53 @@ The above table further proves that none of the regressors is statistically sign
 
 Should try First difference model
 
-```{r}
-res_multi = feols(c(corruption) ~ oda_gni + csw(log(gdp_per_cap), g_oda_net ) | sw0(country), 
-                  panel_data, panel.id = ~country+year, fsplit = ~country)
-
-summary(res_multi, "compact", se = "hetero")
-```
 
 
-```{r}
+```{r chunk70}
 res_fe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country , 
-               panel_data, panel.id = ~country+year)
+                 panel_data, panel.id = ~country+year)
 
 res_hfe_2 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country + year, 
-                panel_data, panel.id = ~country+year)
+                  panel_data, panel.id = ~country+year)
 
 res_hfe_3 = feols(corruption ~  oda_gni + log(gdp_per_cap) + l(g_oda_net, 0:1) | country + year, 
-                panel_data, panel.id = ~country+year)
+                  panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_2, res_hfe_2, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE)
+modelsummary(list(res_fe_2, res_hfe_2, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
 We can also analyse our fixed effects and see which ones are the most impactful.
 
-```{r}
+```{r chunk71, fig.height=4, fig.width=8}
 plot(fixef(res_fe_2))
 ```
 
-```{r}
+```{r chunk72, fig.height=4, fig.width=8}
 plot(fixef(res_hfe_2))
 ```
 The year 2003 can be considered as an outlier ?
-
-
-```{r}
+  
+  
+```{r chunk73}
 # Varying slope, not working well
 res_hfe_3 = feols(corruption ~  oda_gni + log(gdp_per_cap) + g_oda_net | country[year] , 
-                panel_data, panel.id = ~country+year)
+                  panel_data, panel.id = ~country+year)
 
 #etable(res_fe, res_hfe, postprocess.df = pandoc.table.return, style = 'rmarkdown')
-modelsummary(list(res_fe_2, res_hfe_2, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE)
+modelsummary(list(res_fe_2, res_hfe_2, res_hfe_3), gof_omit = "Pseudo|IC|Log", stars = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
-```{r}
+
+\
+```{r chunk74}
 coefplot(res_fe_2)
 ```
 
-```{r}
+\
+
+```{r chunk75}
 coefplot(res_hfe_2)
 ```
 
