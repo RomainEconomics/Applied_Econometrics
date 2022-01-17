@@ -841,7 +841,8 @@ Finally, to check the existence of individual fixed effects, we run a Hausman te
 
 ```{r chunk40}
 kable(tidy(phtest(plmrandom, plmwithin)), caption=
- "Hausman endogeneity test for the random effects wage model",  booktabs = T)
+ "Hausman endogeneity test for the random effects wage model",  booktabs = T) %>%
+kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
 The above output shows a low  p -value of the test, which indicates that the null hypothesis - stating that the individual random effects are exogenous - is rejected. The random effects estimation is therefore inconsistent. The fixed effects model is therefore the correct specification.
